@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.fade-transition {
+  transition:
+    opacity 300ms ease-in-out,
+    max-height 300ms ease-in-out;
+  opacity: 0;
+  max-height: 0;
+  overflow: hidden;
+}
+.fade-transition.show {
+  opacity: 1;
+  max-height: 1000px; /* Adjust this value based on your content */
+}

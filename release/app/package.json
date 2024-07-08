@@ -1,0 +1,18 @@
+{
+  "name": "gcs-storage-manager",
+  "version": "1.0.0",
+  "description": "An Electron-based desktop application for managing Google Cloud Storage buckets and files",
+  "license": "MIT",
+  "author": {
+    "name": "Sergio Rodríguez de Guzmán",
+    "email": "sergio@pue.es",
+    "url": "https://github.com/pueteam/gcs-storage-manager"
+  },
+  "main": "./dist/main/main.js",
+  "scripts": {
+    "rebuild": "node -r ts-node/register ../../.erb/scripts/electron-rebuild.js",
+    "postinstall": "npm run rebuild && npm run link-modules",
+    "link-modules": "node -r ts-node/register ../../.erb/scripts/link-modules.ts"
+  },
+  "dependencies": {}
+}
