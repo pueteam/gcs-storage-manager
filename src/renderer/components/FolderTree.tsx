@@ -12,60 +12,7 @@ import {
 } from 'react-icons/hi';
 import { Button, TextInput, Modal, Tooltip, Spinner } from 'flowbite-react';
 
-interface ContextMenuProps {
-  x: number;
-  y: number;
-  onCreateFolder: () => void;
-  onRenameFolder: () => void;
-  onDeleteFolder: () => void;
-}
-
-function ContextMenu({
-  x,
-  y,
-  onCreateFolder,
-  onRenameFolder,
-  onDeleteFolder,
-}: ContextMenuProps) {
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        top: y,
-        left: x,
-        zIndex: 1000,
-      }}
-      className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded shadow-lg"
-    >
-      <ul className="py-1">
-        <li>
-          <button
-            onClick={onCreateFolder}
-            className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-600"
-          >
-            <HiPlus className="mr-2" /> Create Folder
-          </button>
-        </li>
-        <li>
-          <button
-            onClick={onRenameFolder}
-            className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-600"
-          >
-            <HiPencil className="mr-2" /> Rename Folder
-          </button>
-        </li>
-        <li>
-          <button
-            onClick={onDeleteFolder}
-            className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-600"
-          >
-            <HiTrash className="mr-2" /> Delete Folder
-          </button>
-        </li>
-      </ul>
-    </div>
-  );
-}
+import ContextMenu from './ContextMenu';
 
 interface FolderTreeProps {
   bucketName: string;
@@ -105,6 +52,27 @@ function FolderTree({
     path: string;
   } | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
+  const [animatingFolders, setAnimatingFolders] = useState<Set<string>>(
+    new Set(),
+  );
+
+  useEffect(() => {
+    const timeouts: NodeJS.Timeout[] = [];
+    animatingFolders.forEach((folderPath) => {
+      const timeout = setTimeout(() => {
+        setAnimatingFolders((prev) => {
+          const newSet = new Set(prev);
+          newSet.delete(folderPath);
+          return newSet;
+        });
+      }, 300); // Duration of the animation
+      timeouts.push(timeout);
+    });
+
+    return () => {
+      timeouts.forEach(clearTimeout);
+    };
+  }, [animatingFolders]);
 
   useEffect(() => {
     fetchFolderStructure();
@@ -233,19 +201,19 @@ function FolderTree({
 
   const createFolder = async () => {
     if (newFolderName) {
-      setIsLoading(true);
       try {
         await window.electron.ipcRenderer.invoke('create-folder-tree', {
           bucketName,
           path: `${selectedFolderPath}/${newFolderName}`,
         });
+        setAnimatingFolders((prev) =>
+          new Set(prev).add(`${selectedFolderPath}/${newFolderName}`),
+        );
         await fetchFolderStructure();
         setCreateModalOpen(false);
         onFolderChange();
       } catch (error) {
         console.error('Error creating folder:', error);
-      } finally {
-        setIsLoading(false);
       }
     }
   };
@@ -272,7 +240,7 @@ function FolderTree({
 
   const deleteFolder = async () => {
     try {
-      setIsLoading(true);
+      setAnimatingFolders((prev) => new Set(prev).add(selectedFolderPath));
       await window.electron.ipcRenderer.invoke('delete-folder', {
         bucketName,
         path: selectedFolderPath,
@@ -282,14 +250,13 @@ function FolderTree({
       onFolderChange();
     } catch (error) {
       console.error('Error deleting folder:', error);
-    } finally {
-      setIsLoading(false);
     }
   };
 
   const renderFolder = useCallback(
     (folder: FolderNode, level: number = 0): React.ReactNode => {
       const isExpanded = expandedFolders.has(folder.path);
+      const isAnimating = animatingFolders.has(folder.path);
       const matchesSearch = folderMatchesSearch(folder);
 
       if (searchTerm && !matchesSearch) {
@@ -297,7 +264,18 @@ function FolderTree({
       }
 
       return (
-        <div key={folder.path}>
+        <div
+          key={folder.path}
+          className={`
+                  transition-all duration-300 ease-in-out
+                  ${isAnimating ? 'animate-folder' : ''}
+                `}
+          style={{
+            marginLeft: `${level * 20}px`,
+            maxHeight: isAnimating || isExpanded ? '1000px' : '30px', // Adjust based on your needs
+            opacity: isAnimating ? 0 : 1,
+          }}
+        >
           <div
             className="flex items-center cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 p-1 rounded"
             style={{ marginLeft: `${level * 20}px` }}
@@ -317,7 +295,7 @@ function FolderTree({
               <span className="w-5" />
             )}
             <HiOutlineFolder className="w-5 h-5 text-yellow-500 mr-2" />
-            <span className="text-sm">{folder.name}</span>
+            <span className="text-sm dark:text-blue-400">{folder.name}</span>
           </div>
           {(isExpanded || searchTerm) &&
             folder.children.map((child) => renderFolder(child, level + 1))}
@@ -326,6 +304,7 @@ function FolderTree({
     },
     [
       expandedFolders,
+      animatingFolders,
       searchTerm,
       toggleFolder,
       onFolderSelect,
@@ -347,7 +326,12 @@ function FolderTree({
         />
         <div className="flex ml-2">
           <Tooltip content="Expand All">
-            <Button size="sm" color="gray" onClick={expandAll} className="p-2">
+            <Button
+              size="sm"
+              color="gray"
+              onClick={expandAll}
+              className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700"
+            >
               <HiOutlineChevronDoubleDown className="h-4 w-4" />
             </Button>
           </Tooltip>
@@ -356,7 +340,7 @@ function FolderTree({
               size="sm"
               color="gray"
               onClick={collapseAll}
-              className="p-2 ml-1"
+              className="p-1 ml-1 hover:bg-gray-200 dark:hover:bg-gray-700"
             >
               <HiOutlineChevronDoubleUp className="h-4 w-4" />
             </Button>

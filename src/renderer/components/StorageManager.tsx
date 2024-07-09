@@ -31,10 +31,19 @@ import {
   HiOutlineInformationCircle,
   HiOutlineEye,
   HiOutlineSwitchHorizontal,
+  HiSearch,
+  HiOutlineRefresh,
 } from 'react-icons/hi';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../ThemeContext';
 import FolderTree from './FolderTree';
+
+interface BucketInfo {
+  name: string;
+  created: string;
+  location: string;
+  storageClass: string;
+}
 
 interface FileInfo {
   name: string;
@@ -64,11 +73,10 @@ const transitionStyles = `
 function StorageManager({ config }: StorageManagerProps) {
   const navigate = useNavigate();
   const { theme } = useTheme();
-  const [buckets, setBuckets] = useState<string[]>([]);
-  const [filteredBuckets, setFilteredBuckets] = useState<string[]>([]);
+  const [buckets, setBuckets] = useState<BucketInfo[]>([]);
+  const [filteredBuckets, setFilteredBuckets] = useState<BucketInfo[]>([]);
   const [selectedBucket, setSelectedBucket] = useState('');
   const [files, setFiles] = useState<FileInfo[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
   const [fileSearchTerm, setFileSearchTerm] = useState('');
   const [sortColumn, setSortColumn] = useState<keyof FileInfo>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -102,33 +110,42 @@ function StorageManager({ config }: StorageManagerProps) {
   const [showBucketList, setShowBucketList] = useState(true);
   const [bucketListVisible, setBucketListVisible] = useState(true);
   const [folderStructureVisible, setFolderStructureVisible] = useState(false);
+  const [bucketSearchTerm, setBucketSearchTerm] = useState('');
+  const [isLoadingBuckets, setIsLoadingBuckets] = useState(false);
+  const [bucketCurrentPage, setBucketCurrentPage] = useState(1);
+  const [bucketsPerPage, setBucketsPerPage] = useState(10);
+
+  const fetchBuckets = useCallback(async () => {
+    setIsLoadingBuckets(true);
+    try {
+      const bucketList: BucketInfo[] = await window.electron.ipcRenderer.invoke(
+        'list-buckets-with-info',
+      );
+      setBuckets(bucketList);
+      setFilteredBuckets(bucketList);
+      setBucketCurrentPage(1);
+    } catch (error) {
+      console.error('Error fetching buckets:', error);
+    } finally {
+      setIsLoadingBuckets(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!config) {
       navigate('/');
       return;
     }
-
-    const fetchBuckets = async () => {
-      try {
-        const bucketList =
-          await window.electron.ipcRenderer.invoke('list-buckets');
-        setBuckets(bucketList);
-        setFilteredBuckets(bucketList);
-      } catch (error) {
-        console.error('Error fetching buckets:', error);
-      }
-    };
-
     fetchBuckets();
-  }, [config, navigate]);
+  }, [config, navigate, fetchBuckets]);
 
   useEffect(() => {
     const filtered = buckets.filter((bucket) =>
-      bucket.toLowerCase().includes(searchTerm.toLowerCase()),
+      bucket.name.toLowerCase().includes(bucketSearchTerm.toLowerCase()),
     );
     setFilteredBuckets(filtered);
-  }, [searchTerm, buckets]);
+    setBucketCurrentPage(1);
+  }, [bucketSearchTerm, buckets]);
 
   useEffect(() => {
     const handleDownloadProgress = ({
@@ -181,6 +198,15 @@ function StorageManager({ config }: StorageManagerProps) {
     setShowBucketList(false);
     await fetchFiles(bucketName, '');
   };
+
+  const bucketIndexOfLastItem = bucketCurrentPage * bucketsPerPage;
+  const bucketIndexOfFirstItem = bucketIndexOfLastItem - bucketsPerPage;
+  const currentBuckets = filteredBuckets.slice(
+    bucketIndexOfFirstItem,
+    bucketIndexOfLastItem,
+  );
+
+  const onBucketPageChange = (page: number) => setBucketCurrentPage(page);
 
   useEffect(() => {
     if (showBucketList) {
@@ -376,16 +402,29 @@ function StorageManager({ config }: StorageManagerProps) {
     return `${Math.round(bytes / 1024 ** i)} ${sizes[i]}`;
   };
 
+  type SortColumn = keyof FileInfo;
+
   const sortedAndFilteredFiles = useMemo(() => {
     return files
       .filter((file) =>
         file.name.toLowerCase().includes(fileSearchTerm.toLowerCase()),
       )
       .sort((a, b) => {
-        if (a[sortColumn] < b[sortColumn])
-          return sortDirection === 'asc' ? -1 : 1;
-        if (a[sortColumn] > b[sortColumn])
-          return sortDirection === 'asc' ? 1 : -1;
+        const aValue = a[sortColumn as SortColumn];
+        const bValue = b[sortColumn as SortColumn];
+
+        if (aValue === undefined || bValue === undefined) {
+          return 0; // Handle cases where the property might not exist
+        }
+
+        if (typeof aValue === 'string' && typeof bValue === 'string') {
+          return sortDirection === 'asc'
+            ? aValue.localeCompare(bValue)
+            : bValue.localeCompare(aValue);
+        }
+
+        if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+        if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
         return 0;
       });
   }, [files, fileSearchTerm, sortColumn, sortDirection]);
@@ -466,35 +505,78 @@ function StorageManager({ config }: StorageManagerProps) {
       <style>{transitionStyles}</style>
       <div className="grid grid-cols-4 gap-4">
         {bucketListVisible && (
-          <Card
-            className={`col-span-1 flex flex-col h-full ${
-              showBucketList ? 'show' : ''
-            }`}
-          >
-            <div className="flex-grow">
-              <h2 className="text-xl font-semibold mb-2 dark:text-white">
-                Buckets
-              </h2>
-              <TextInput
-                type="text"
-                placeholder="Search buckets..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="mb-2"
+          <Card className={`col-span-4 ${showBucketList ? 'show' : ''}`}>
+            <div className="mb-4 flex justify-between items-center">
+              <h2 className="text-xl font-semibold dark:text-white">Buckets</h2>
+              <div className="flex items-center">
+                <TextInput
+                  type="text"
+                  placeholder="Search buckets..."
+                  value={bucketSearchTerm}
+                  onChange={(e) => setBucketSearchTerm(e.target.value)}
+                  icon={HiSearch}
+                  className="mr-2"
+                />
+                <Button
+                  color="light"
+                  onClick={fetchBuckets}
+                  disabled={isLoadingBuckets}
+                >
+                  <HiOutlineRefresh className="mr-2 h-5 w-5" />
+                  Refresh
+                </Button>
+              </div>
+            </div>
+            <Table hoverable>
+              <Table.Head>
+                <Table.HeadCell>Bucket Name</Table.HeadCell>
+                <Table.HeadCell>Created</Table.HeadCell>
+                <Table.HeadCell>Location</Table.HeadCell>
+                <Table.HeadCell>Storage Class</Table.HeadCell>
+              </Table.Head>
+              <Table.Body className="divide-y">
+                {currentBuckets.map((bucket) => (
+                  <Table.Row
+                    key={bucket.name}
+                    className="bg-white dark:border-gray-700 dark:bg-gray-800"
+                    onClick={() => handleBucketSelect(bucket.name)}
+                  >
+                    <Table.Cell className="whitespace-nowrap font-medium text-gray-900 dark:text-white">
+                      {bucket.name}
+                    </Table.Cell>
+                    <Table.Cell>
+                      {new Date(bucket.created).toLocaleString()}
+                    </Table.Cell>
+                    <Table.Cell>{bucket.location}</Table.Cell>
+                    <Table.Cell>{bucket.storageClass}</Table.Cell>
+                  </Table.Row>
+                ))}
+              </Table.Body>
+            </Table>
+            <div className="flex items-center justify-between mt-4">
+              <Pagination
+                currentPage={bucketCurrentPage}
+                totalPages={Math.ceil(filteredBuckets.length / bucketsPerPage)}
+                onPageChange={onBucketPageChange}
+                showIcons={true}
               />
-              <div className="h-96 overflow-y-auto">
-                <ListGroup>
-                  {filteredBuckets.map((bucket) => (
-                    <ListGroup.Item
-                      key={bucket}
-                      onClick={() => handleBucketSelect(bucket)}
-                      className="cursor-pointer"
-                      active={bucket === selectedBucket}
-                    >
-                      {bucket}
-                    </ListGroup.Item>
-                  ))}
-                </ListGroup>
+              <div className="flex items-center">
+                <span className="mr-2 dark:text-slate-400">
+                  Buckets per page:
+                </span>
+                <Select
+                  id="bucketsPerPage"
+                  value={bucketsPerPage.toString()}
+                  onChange={(e) => {
+                    setBucketsPerPage(Number(e.target.value));
+                    setBucketCurrentPage(1); // Reset to first page when changing items per page
+                  }}
+                >
+                  <option value="5">5</option>
+                  <option value="10">10</option>
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                </Select>
               </div>
             </div>
           </Card>
@@ -526,33 +608,34 @@ function StorageManager({ config }: StorageManagerProps) {
             />
           </Card>
         )}
-        <Card
-          className={`${
-            selectedBucket && !showBucketList ? 'col-span-3' : 'col-span-3'
-          }`}
-        >
-          <div className="flex-grow overflow-y-auto">
-            {selectedBucket && (
-              <>
-                <div className="mb-4">
-                  <Breadcrumb>
-                    <Breadcrumb.Item
-                      href="#"
-                      onClick={() => handleBreadcrumbClick(0)}
-                    >
-                      {selectedBucket}
-                    </Breadcrumb.Item>
-                    {currentPath.split('/').map((folder, index) => (
+        {folderStructureVisible && (
+          <Card
+            className={`${
+              selectedBucket && !showBucketList ? 'col-span-3' : 'col-span-3'
+            }`}
+          >
+            <div className="flex-grow overflow-y-auto">
+              {selectedBucket && (
+                <>
+                  <div className="mb-4">
+                    <Breadcrumb>
                       <Breadcrumb.Item
-                        key={index}
                         href="#"
-                        onClick={() => handleBreadcrumbClick(index + 1)}
+                        onClick={() => handleBreadcrumbClick(0)}
                       >
-                        {folder}
+                        {selectedBucket}
                       </Breadcrumb.Item>
-                    ))}
-                  </Breadcrumb>
-                  {/*
+                      {currentPath.split('/').map((folder, index) => (
+                        <Breadcrumb.Item
+                          key={index}
+                          href="#"
+                          onClick={() => handleBreadcrumbClick(index + 1)}
+                        >
+                          {folder}
+                        </Breadcrumb.Item>
+                      ))}
+                    </Breadcrumb>
+                    {/*
                     isLoading && (
                     <div className="flex items-center">
                       <Spinner size="sm" />
@@ -560,217 +643,220 @@ function StorageManager({ config }: StorageManagerProps) {
                     </div>
                   )
                   */}
-                </div>
-                <div className="flex justify-between mb-4">
-                  {currentPath && (
-                    <Button color="light" onClick={handleBackClick}>
-                      <HiOutlineChevronLeft className="mr-2 h-5 w-5" />
-                      Back
-                    </Button>
-                  )}
-                  <Button color="light" onClick={createFolder}>
-                    <HiOutlineFolder className="mr-2 h-5 w-5 text-yellow-500" />
-                    New Folder
-                  </Button>
-                </div>
-                <div className="mb-4 flex justify-between items-center">
-                  <TextInput
-                    type="text"
-                    placeholder="Search files..."
-                    value={fileSearchTerm}
-                    onChange={(e) => setFileSearchTerm(e.target.value)}
-                    className="w-1/2"
-                  />
-                  <div className="flex items-center">
-                    <span className="mr-2 dark:text-white">
-                      Items per page:
-                    </span>
-                    <Select
-                      value={itemsPerPage}
-                      onChange={handleItemsPerPageChange}
-                    >
-                      <option value={5}>5</option>
-                      <option value={10}>10</option>
-                      <option value={25}>25</option>
-                      <option value={50}>50</option>
-                    </Select>
                   </div>
-                </div>
-                {isLoading ? (
-                  <div className="flex justify-center items-center h-64">
-                    <Spinner size="xl" />
-                  </div>
-                ) : (
-                  <Table>
-                    <Table.Head>
-                      <Table.HeadCell
-                        onClick={() => handleSort('name')}
-                        className="cursor-pointer"
-                      >
-                        File Name{' '}
-                        {sortColumn === 'name' &&
-                          (sortDirection === 'asc' ? '↑' : '↓')}
-                      </Table.HeadCell>
-                      <Table.HeadCell
-                        onClick={() => handleSort('size')}
-                        className="cursor-pointer"
-                      >
-                        Size{' '}
-                        {sortColumn === 'size' &&
-                          (sortDirection === 'asc' ? '↑' : '↓')}
-                      </Table.HeadCell>
-                      <Table.HeadCell
-                        onClick={() => handleSort('updated')}
-                        className="cursor-pointer"
-                      >
-                        Last Modified{' '}
-                        {sortColumn === 'updated' &&
-                          (sortDirection === 'asc' ? '↑' : '↓')}
-                      </Table.HeadCell>
-                      <Table.HeadCell>Actions</Table.HeadCell>
-                    </Table.Head>
-                    <Table.Body className="divide-y">
-                      {paginatedFiles.map((file) => (
-                        <Table.Row
-                          key={file.name}
-                          className="bg-white dark:border-gray-700 dark:bg-gray-800"
-                        >
-                          <Table.Cell className="whitespace-nowrap font-medium text-gray-900 dark:text-white">
-                            {file.isFolder ? (
-                              <button
-                                onClick={() => handleFolderClick(file.name)}
-                                className="flex items-center text-blue-600 hover:underline"
-                              >
-                                <HiOutlineFolder className="mr-2 h-5 w-5 text-yellow-500" />
-                                {file.name}
-                              </button>
-                            ) : (
-                              file.name
-                            )}
-                          </Table.Cell>
-                          <Table.Cell>
-                            {file.isFolder ? '-' : formatFileSize(file.size)}
-                          </Table.Cell>
-                          <Table.Cell>
-                            {file.isFolder
-                              ? '-'
-                              : new Date(file.updated).toLocaleString()}
-                          </Table.Cell>
-                          <Table.Cell>
-                            {downloadProgress[file.name] !== undefined ? (
-                              <div className="w-full">
-                                <Progress
-                                  progress={downloadProgress[file.name]}
-                                  size="lg"
-                                  labelProgress
-                                />
-                              </div>
-                            ) : (
-                              ''
-                            )}
-                            <div className="flex items-center space-x-2">
-                              <Tooltip content="Download">
-                                <button
-                                  onClick={() => handleFileDownload(file.name)}
-                                  className="text-gray-500 hover:text-blue-600"
-                                >
-                                  <HiOutlineDownload className="h-5 w-5" />
-                                </button>
-                              </Tooltip>
-                              <Tooltip content="Delete">
-                                <button
-                                  onClick={() => {
-                                    setFileToDelete(file.name);
-                                    setDeleteModalOpen(true);
-                                  }}
-                                  className="text-gray-500 hover:text-red-600"
-                                >
-                                  <HiOutlineTrash className="h-5 w-5" />
-                                </button>
-                              </Tooltip>
-                              <Tooltip content="Info">
-                                <button
-                                  onClick={() =>
-                                    !file.isFolder &&
-                                    fetchFileDetails(file.name)
-                                  }
-                                  className="text-gray-500 hover:text-green-600 transition-all duration-200 ease-in-out hover:scale-110"
-                                  disabled={file.isFolder}
-                                >
-                                  <HiOutlineInformationCircle className="h-5 w-5" />
-                                </button>
-                              </Tooltip>
-                              {!file.isFolder &&
-                                (file.name.endsWith('.pdf') ||
-                                  file.name.match(/\.(jpe?g|png|gif)$/i)) && (
-                                  <Tooltip content="Preview">
-                                    <button
-                                      onClick={() =>
-                                        fetchFilePreview(file.name)
-                                      }
-                                      className="text-gray-500 hover:text-purple-600 transition-all duration-200 ease-in-out hover:scale-110"
-                                    >
-                                      <HiOutlineEye className="h-5 w-5" />
-                                    </button>
-                                  </Tooltip>
-                                )}
-                            </div>
-                          </Table.Cell>
-                        </Table.Row>
-                      ))}
-                    </Table.Body>
-                  </Table>
-                )}
-                <div className="flex items-center justify-between mt-4">
-                  <Pagination
-                    currentPage={currentPage}
-                    totalPages={Math.ceil(
-                      sortedAndFilteredFiles.length / itemsPerPage,
+                  <div className="flex justify-between mb-4">
+                    {currentPath && (
+                      <Button color="light" onClick={handleBackClick}>
+                        <HiOutlineChevronLeft className="mr-2 h-5 w-5" />
+                        Back
+                      </Button>
                     )}
-                    onPageChange={setCurrentPage}
-                    showIcons
-                  />
-                  <div className="dark:text-white">
-                    Showing {paginatedFiles.length} of{' '}
-                    {sortedAndFilteredFiles.length} files
+                    <Button color="light" onClick={createFolder}>
+                      <HiOutlineFolder className="mr-2 h-5 w-5 text-yellow-500" />
+                      New Folder
+                    </Button>
                   </div>
-                </div>
-                <div className="mt-4">
-                  <FileInput
-                    ref={fileInputRef}
-                    multiple
-                    onChange={handleFileUpload}
-                    disabled={isUploading}
-                    helperText="Choose files to upload"
-                  />
-                  {isUploading && (
-                    <div className="mt-2">
-                      {Object.entries(uploadProgress).map(
-                        ([fileName, progress]) => (
-                          <div key={fileName} className="mb-2">
-                            <div className="flex justify-between mb-1">
-                              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                                {fileName}
-                              </span>
-                              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                                {progress}%
-                              </span>
-                            </div>
-                            <Progress
-                              progress={progress}
-                              size="sm"
-                              color="blue"
-                            />
-                          </div>
-                        ),
-                      )}
+                  <div className="mb-4 flex justify-between items-center">
+                    <TextInput
+                      type="text"
+                      placeholder="Search files..."
+                      value={fileSearchTerm}
+                      onChange={(e) => setFileSearchTerm(e.target.value)}
+                      className="w-1/2"
+                    />
+                    <div className="flex items-center">
+                      <span className="mr-2 dark:text-white">
+                        Items per page:
+                      </span>
+                      <Select
+                        value={itemsPerPage}
+                        onChange={handleItemsPerPageChange}
+                      >
+                        <option value={5}>5</option>
+                        <option value={10}>10</option>
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                      </Select>
                     </div>
+                  </div>
+                  {isLoading ? (
+                    <div className="flex justify-center items-center h-64">
+                      <Spinner size="xl" />
+                    </div>
+                  ) : (
+                    <Table>
+                      <Table.Head>
+                        <Table.HeadCell
+                          onClick={() => handleSort('name')}
+                          className="cursor-pointer"
+                        >
+                          File Name{' '}
+                          {sortColumn === 'name' &&
+                            (sortDirection === 'asc' ? '↑' : '↓')}
+                        </Table.HeadCell>
+                        <Table.HeadCell
+                          onClick={() => handleSort('size')}
+                          className="cursor-pointer"
+                        >
+                          Size{' '}
+                          {sortColumn === 'size' &&
+                            (sortDirection === 'asc' ? '↑' : '↓')}
+                        </Table.HeadCell>
+                        <Table.HeadCell
+                          onClick={() => handleSort('updated')}
+                          className="cursor-pointer"
+                        >
+                          Last Modified{' '}
+                          {sortColumn === 'updated' &&
+                            (sortDirection === 'asc' ? '↑' : '↓')}
+                        </Table.HeadCell>
+                        <Table.HeadCell>Actions</Table.HeadCell>
+                      </Table.Head>
+                      <Table.Body className="divide-y">
+                        {paginatedFiles.map((file) => (
+                          <Table.Row
+                            key={file.name}
+                            className="bg-white dark:border-gray-700 dark:bg-gray-800"
+                          >
+                            <Table.Cell className="whitespace-nowrap font-medium text-gray-900 dark:text-white">
+                              {file.isFolder ? (
+                                <button
+                                  onClick={() => handleFolderClick(file.name)}
+                                  className="flex items-center text-blue-600 dark:text-blue-400 hover:underline"
+                                >
+                                  <HiOutlineFolder className="mr-2 h-5 w-5 text-yellow-500" />
+                                  {file.name}
+                                </button>
+                              ) : (
+                                file.name
+                              )}
+                            </Table.Cell>
+                            <Table.Cell>
+                              {file.isFolder ? '-' : formatFileSize(file.size)}
+                            </Table.Cell>
+                            <Table.Cell>
+                              {file.isFolder
+                                ? '-'
+                                : new Date(file.updated).toLocaleString()}
+                            </Table.Cell>
+                            <Table.Cell>
+                              {downloadProgress[file.name] !== undefined ? (
+                                <div className="w-full">
+                                  <Progress
+                                    progress={downloadProgress[file.name]}
+                                    size="lg"
+                                    labelProgress
+                                  />
+                                </div>
+                              ) : (
+                                ''
+                              )}
+                              <div className="flex items-center space-x-2">
+                                <Tooltip content="Download">
+                                  <button
+                                    onClick={() =>
+                                      handleFileDownload(file.name)
+                                    }
+                                    className="text-gray-500 hover:text-blue-600"
+                                  >
+                                    <HiOutlineDownload className="h-5 w-5" />
+                                  </button>
+                                </Tooltip>
+                                <Tooltip content="Delete">
+                                  <button
+                                    onClick={() => {
+                                      setFileToDelete(file.name);
+                                      setDeleteModalOpen(true);
+                                    }}
+                                    className="text-gray-500 hover:text-red-600"
+                                  >
+                                    <HiOutlineTrash className="h-5 w-5" />
+                                  </button>
+                                </Tooltip>
+                                <Tooltip content="Info">
+                                  <button
+                                    onClick={() =>
+                                      !file.isFolder &&
+                                      fetchFileDetails(file.name)
+                                    }
+                                    className="text-gray-500 hover:text-green-600 transition-all duration-200 ease-in-out hover:scale-110"
+                                    disabled={file.isFolder}
+                                  >
+                                    <HiOutlineInformationCircle className="h-5 w-5" />
+                                  </button>
+                                </Tooltip>
+                                {!file.isFolder &&
+                                  (file.name.endsWith('.pdf') ||
+                                    file.name.match(/\.(jpe?g|png|gif)$/i)) && (
+                                    <Tooltip content="Preview">
+                                      <button
+                                        onClick={() =>
+                                          fetchFilePreview(file.name)
+                                        }
+                                        className="text-gray-500 hover:text-purple-600 transition-all duration-200 ease-in-out hover:scale-110"
+                                      >
+                                        <HiOutlineEye className="h-5 w-5" />
+                                      </button>
+                                    </Tooltip>
+                                  )}
+                              </div>
+                            </Table.Cell>
+                          </Table.Row>
+                        ))}
+                      </Table.Body>
+                    </Table>
                   )}
-                </div>
-              </>
-            )}
-          </div>
-        </Card>
+                  <div className="flex items-center justify-between mt-4">
+                    <Pagination
+                      currentPage={currentPage}
+                      totalPages={Math.ceil(
+                        sortedAndFilteredFiles.length / itemsPerPage,
+                      )}
+                      onPageChange={setCurrentPage}
+                      showIcons
+                    />
+                    <div className="dark:text-white">
+                      Showing {paginatedFiles.length} of{' '}
+                      {sortedAndFilteredFiles.length} files
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                    <FileInput
+                      ref={fileInputRef}
+                      multiple
+                      onChange={handleFileUpload}
+                      disabled={isUploading}
+                      helperText="Choose files to upload"
+                    />
+                    {isUploading && (
+                      <div className="mt-2">
+                        {Object.entries(uploadProgress).map(
+                          ([fileName, progress]) => (
+                            <div key={fileName} className="mb-2">
+                              <div className="flex justify-between mb-1">
+                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                  {fileName}
+                                </span>
+                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                  {progress}%
+                                </span>
+                              </div>
+                              <Progress
+                                progress={progress}
+                                size="sm"
+                                color="blue"
+                              />
+                            </div>
+                          ),
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </Card>
+        )}
       </div>
       <Modal show={deleteModalOpen} onClose={() => setDeleteModalOpen(false)}>
         <Modal.Header>Confirm Deletion</Modal.Header>

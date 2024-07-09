@@ -10,7 +10,6 @@
  */
 import path from 'path';
 import fs from 'fs';
-import { Readable } from 'stream';
 import { Storage } from '@google-cloud/storage';
 import { app, BrowserWindow, shell, ipcMain, dialog } from 'electron';
 import { autoUpdater } from 'electron-updater';
@@ -338,6 +337,27 @@ ipcMain.handle('get-file-preview', async (event, { bucketName, filePath }) => {
   }
 });
 
+ipcMain.handle('list-buckets-with-info', async () => {
+  if (!storage) throw new Error('Storage not initialized');
+
+  try {
+    const [buckets] = await storage.getBuckets();
+    const bucketInfoPromises = buckets.map(async (bucket) => {
+      const [metadata] = await bucket.getMetadata();
+      return {
+        name: bucket.name,
+        created: metadata.timeCreated,
+        location: metadata.location,
+        storageClass: metadata.storageClass,
+      };
+    });
+    return Promise.all(bucketInfoPromises);
+  } catch (error) {
+    console.error('Error listing buckets with info:', error);
+    throw error;
+  }
+});
+
 interface FolderNode {
   name: string;
   path: string;
@@ -449,7 +469,7 @@ const createWindow = async () => {
   mainWindow = new BrowserWindow({
     show: false,
     width: 1600,
-    height: 728,
+    height: 900,
     icon: getAssetPath('icon.png'),
     webPreferences: {
       preload: app.isPackaged

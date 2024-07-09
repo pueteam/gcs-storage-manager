@@ -1,8 +1,25 @@
 // Disable no-unused-vars, broken for spread args
 /* eslint no-unused-vars: off */
-import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
+import { contextBridge, ipcRenderer } from 'electron';
 
-export type Channels = 'ipc-example';
+export type Channels =
+  | 'ipc-example'
+  | 'load-config'
+  | 'save-config'
+  | 'select-credentials-file'
+  | 'list-buckets'
+  | 'upload-file'
+  | 'download-file'
+  | 'delete-file'
+  | 'create-folder'
+  | 'get-file-details'
+  | 'get-file-preview'
+  | 'list-files'
+  | 'get-folder-structure'
+  | 'create-folder-tree'
+  | 'rename-folder'
+  | 'delete-folder'
+  | 'list-buckets-with-info';
 
 const electronHandler = {
   ipcRenderer: {
