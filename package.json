@@ -196,6 +196,9 @@
           "x64"
         ]
       },
+      "notarize": {
+        "teamId": "QDVTZTL7YK"
+      },
       "type": "distribution",
       "hardenedRuntime": true,
       "entitlements": "assets/entitlements.mac.plist",
