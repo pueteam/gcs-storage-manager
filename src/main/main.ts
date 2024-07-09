@@ -87,6 +87,7 @@ ipcMain.handle('list-files', async (event, bucketName, prefix = '') => {
     const [files] = await storage
       .bucket(bucketName)
       .getFiles({ prefix, delimiter: '/' });
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [f, nextQuery, folders] = await storage
       .bucket(bucketName)
       .getFiles({ prefix, delimiter: '/', autoPaginate: false });
@@ -98,7 +99,7 @@ ipcMain.handle('list-files', async (event, bucketName, prefix = '') => {
           const [metadata] = await file.getMetadata();
           return {
             name: path.basename(file.name),
-            size: parseInt(metadata.size),
+            size: parseInt(metadata.size as string, 10),
             updated: metadata.updated,
             isFolder: false,
           };
@@ -168,7 +169,7 @@ ipcMain.handle('download-file', async (event, { bucketName, filePath }) => {
 
     // Get the file metadata to know the total size
     const [metadata] = await file.getMetadata();
-    const totalSize = parseInt(metadata.size);
+    const totalSize = parseInt(metadata.size as string, 10);
 
     const downloadPath = path.join(
       app.getPath('downloads'),
@@ -222,10 +223,7 @@ ipcMain.handle('create-folder', async (event, { bucketName, folderPath }) => {
 
   try {
     // Create an empty file with the folder name ending in a slash
-    await storage
-      .bucket(bucketName)
-      .file(folderPath + '/')
-      .save('');
+    await storage.bucket(bucketName).file(`${folderPath}/`).save('');
     return true;
   } catch (error) {
     console.error('Error creating folder:', error);
@@ -233,18 +231,15 @@ ipcMain.handle('create-folder', async (event, { bucketName, folderPath }) => {
   }
 });
 
-ipcMain.handle('create-folder-tree', async (event, { bucketName, path }) => {
+ipcMain.handle('create-folder-tree', async (event, { bucketName, pth }) => {
   if (!storage) throw new Error('Storage not initialized');
 
   try {
-    let p = path;
-    if (path.startsWith('/')) {
+    let p = pth;
+    if (pth.startsWith('/')) {
       p = p.substring(1);
     }
-    await storage
-      .bucket(bucketName)
-      .file(p + '/')
-      .save('');
+    await storage.bucket(bucketName).file(`${p}/`).save('');
     return true;
   } catch (error) {
     console.error('Error creating folder:', error);
@@ -252,12 +247,12 @@ ipcMain.handle('create-folder-tree', async (event, { bucketName, path }) => {
   }
 });
 
-ipcMain.handle('delete-folder', async (event, { bucketName, path }) => {
+ipcMain.handle('delete-folder', async (event, { bucketName, p }) => {
   if (!storage) throw new Error('Storage not initialized');
 
   try {
     await storage.bucket(bucketName).deleteFiles({
-      prefix: path + '/',
+      prefix: `${p}/`,
     });
     return true;
   } catch (error) {
@@ -273,16 +268,18 @@ ipcMain.handle(
 
     try {
       const [files] = await storage.bucket(bucketName).getFiles({
-        prefix: oldPath + '/',
+        prefix: `${oldPath}/`,
       });
 
-      for (const file of files) {
+      const moveOperations = files.map((file) => {
         const newPath = file.name.replace(
           oldPath,
           oldPath.split('/').slice(0, -1).concat(newName).join('/'),
         );
-        await storage.bucket(bucketName).file(file.name).move(newPath);
-      }
+        return storage.bucket(bucketName).file(file.name).move(newPath);
+      });
+
+      await Promise.all(moveOperations);
 
       return true;
     } catch (error) {
@@ -302,7 +299,7 @@ ipcMain.handle('get-file-details', async (event, { bucketName, filePath }) => {
 
     return {
       name: file.name,
-      size: parseInt(metadata.size),
+      size: parseInt(metadata.size as string, 10),
       updated: metadata.updated,
       contentType: metadata.contentType,
       isFolder: file.name.endsWith('/'),
@@ -320,7 +317,7 @@ ipcMain.handle('get-file-preview', async (event, { bucketName, filePath }) => {
     const bucket = storage.bucket(bucketName);
     const file = bucket.file(filePath);
     const [metadata] = await file.getMetadata();
-    const contentType = metadata.contentType;
+    const { contentType } = metadata;
 
     if (contentType.startsWith('image/') || contentType === 'application/pdf') {
       const [fileContents] = await file.download();
@@ -328,9 +325,8 @@ ipcMain.handle('get-file-preview', async (event, { bucketName, filePath }) => {
         contentType,
         data: fileContents.toString('base64'),
       };
-    } else {
-      throw new Error('File type not supported for preview');
     }
+    throw new Error('File type not supported for preview');
   } catch (error) {
     console.error('Error getting file preview:', error);
     throw error;

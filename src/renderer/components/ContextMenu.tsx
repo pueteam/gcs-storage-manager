@@ -28,6 +28,7 @@ function ContextMenu({
       <ul className="py-1">
         <li>
           <button
+            type="button"
             onClick={onCreateFolder}
             className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-600"
           >
@@ -36,6 +37,7 @@ function ContextMenu({
         </li>
         <li>
           <button
+            type="button"
             onClick={onRenameFolder}
             className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-600"
           >
@@ -44,6 +46,7 @@ function ContextMenu({
         </li>
         <li>
           <button
+            type="button"
             onClick={onDeleteFolder}
             className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-600"
           >

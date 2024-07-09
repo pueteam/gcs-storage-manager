@@ -11,6 +11,7 @@ interface ConfigProps {
       theme: 'light' | 'dark' | 'system';
     } | null>
   >;
+  // eslint-disable-next-line react/require-default-props
   initialConfig?: {
     projectId: string;
     credentialsFile: string;
@@ -18,9 +19,9 @@ interface ConfigProps {
   } | null;
 }
 
-function ConfigScreen({ setConfig, initialConfig }: ConfigProps) {
+function ConfigScreen({ setConfig, initialConfig = null }: ConfigProps) {
   const navigate = useNavigate();
-  const { theme, setTheme } = useTheme();
+  const { setTheme } = useTheme();
   const [formConfig, setFormConfig] = useState({
     projectId: '',
     credentialsFile: '',

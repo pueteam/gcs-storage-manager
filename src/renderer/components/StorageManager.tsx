@@ -8,7 +8,6 @@ import React, {
 import {
   Button,
   Card,
-  ListGroup,
   FileInput,
   Spinner,
   Table,
@@ -192,13 +191,6 @@ function StorageManager({ config }: StorageManagerProps) {
     };
   }, []);
 
-  const handleBucketSelect = async (bucketName: string) => {
-    setSelectedBucket(bucketName);
-    setCurrentPath('');
-    setShowBucketList(false);
-    await fetchFiles(bucketName, '');
-  };
-
   const bucketIndexOfLastItem = bucketCurrentPage * bucketsPerPage;
   const bucketIndexOfFirstItem = bucketIndexOfLastItem - bucketsPerPage;
   const currentBuckets = filteredBuckets.slice(
@@ -228,7 +220,7 @@ function StorageManager({ config }: StorageManagerProps) {
     setShowBucketList((prev) => !prev);
   };
 
-  const fetchFiles = async (bucketName: string, path: string) => {
+  const fetchFiles = useCallback(async (bucketName: string, path: string) => {
     setIsLoading(true);
     try {
       const fileList: FileInfo[] = await window.electron.ipcRenderer.invoke(
@@ -243,6 +235,13 @@ function StorageManager({ config }: StorageManagerProps) {
     } finally {
       setIsLoading(false);
     }
+  }, []);
+
+  const handleBucketSelect = async (bucketName: string) => {
+    setSelectedBucket(bucketName);
+    setCurrentPath('');
+    setShowBucketList(false);
+    await fetchFiles(bucketName, '');
   };
 
   const handleFolderClick = (folderName: string) => {
@@ -266,14 +265,13 @@ function StorageManager({ config }: StorageManagerProps) {
   const handleFileUpload = async (
     event: React.ChangeEvent<HTMLInputElement>,
   ) => {
-    const files = event.target.files;
-    if (!files || files.length === 0) return;
+    const f = event.target.files;
+    if (!f || f.length === 0) return;
 
     setIsUploading(true);
     setUploadProgress({});
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+    const uploadPromises = Array.from(f).map(async (file) => {
       const destination = currentPath
         ? `${currentPath}/${file.name}`
         : file.name;
@@ -284,20 +282,32 @@ function StorageManager({ config }: StorageManagerProps) {
           filePath: file.path,
           destination,
         });
+        // You can update progress here if needed
+        setUploadProgress((prev) => ({
+          ...prev,
+          [file.name]: 100,
+        }));
       } catch (error) {
         console.error(`Error uploading file ${file.name}:`, error);
+        setUploadProgress((prev) => ({
+          ...prev,
+          [file.name]: 0,
+        }));
         // Optionally, show an error message to the user
       }
-    }
+    });
 
-    setIsUploading(false);
-    fetchFiles(selectedBucket, currentPath);
+    try {
+      await Promise.all(uploadPromises);
+    } finally {
+      setIsUploading(false);
+      fetchFiles(selectedBucket, currentPath);
 
-    // Clear the file input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+      // Clear the file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
-    setUploadProgress({});
   };
 
   const handleFileDownload = async (fileName: string) => {
@@ -489,6 +499,34 @@ function StorageManager({ config }: StorageManagerProps) {
     }
   };
 
+  const renderPreviewContent = (pvData: {
+    contentType: string;
+    data: string;
+  }) => {
+    if (pvData.contentType.startsWith('image/')) {
+      return (
+        <img
+          src={`data:${pvData.contentType};base64,${pvData.data}`}
+          alt="Preview"
+          className="max-w-full max-h-[70vh] object-contain"
+        />
+      );
+    }
+
+    if (pvData.contentType === 'application/pdf') {
+      return (
+        <iframe
+          src={`data:application/pdf;base64,${pvData.data}`}
+          width="100%"
+          height="600px"
+          title="PDF Preview"
+        />
+      );
+    }
+
+    return <p>Preview not available for this file type.</p>;
+  };
+
   return (
     <div
       className={`space-y-4 bg-white dark:bg-slate-800 ${
@@ -558,7 +596,7 @@ function StorageManager({ config }: StorageManagerProps) {
                 currentPage={bucketCurrentPage}
                 totalPages={Math.ceil(filteredBuckets.length / bucketsPerPage)}
                 onPageChange={onBucketPageChange}
-                showIcons={true}
+                showIcons
               />
               <div className="flex items-center">
                 <span className="mr-2 dark:text-slate-400">
@@ -627,6 +665,7 @@ function StorageManager({ config }: StorageManagerProps) {
                       </Breadcrumb.Item>
                       {currentPath.split('/').map((folder, index) => (
                         <Breadcrumb.Item
+                          // eslint-disable-next-line react/no-array-index-key
                           key={index}
                           href="#"
                           onClick={() => handleBreadcrumbClick(index + 1)}
@@ -721,6 +760,7 @@ function StorageManager({ config }: StorageManagerProps) {
                             <Table.Cell className="whitespace-nowrap font-medium text-gray-900 dark:text-white">
                               {file.isFolder ? (
                                 <button
+                                  type="button"
                                   onClick={() => handleFolderClick(file.name)}
                                   className="flex items-center text-blue-600 dark:text-blue-400 hover:underline"
                                 >
@@ -754,6 +794,7 @@ function StorageManager({ config }: StorageManagerProps) {
                               <div className="flex items-center space-x-2">
                                 <Tooltip content="Download">
                                   <button
+                                    type="button"
                                     onClick={() =>
                                       handleFileDownload(file.name)
                                     }
@@ -764,6 +805,7 @@ function StorageManager({ config }: StorageManagerProps) {
                                 </Tooltip>
                                 <Tooltip content="Delete">
                                   <button
+                                    type="button"
                                     onClick={() => {
                                       setFileToDelete(file.name);
                                       setDeleteModalOpen(true);
@@ -775,6 +817,7 @@ function StorageManager({ config }: StorageManagerProps) {
                                 </Tooltip>
                                 <Tooltip content="Info">
                                   <button
+                                    type="button"
                                     onClick={() =>
                                       !file.isFolder &&
                                       fetchFileDetails(file.name)
@@ -790,6 +833,7 @@ function StorageManager({ config }: StorageManagerProps) {
                                     file.name.match(/\.(jpe?g|png|gif)$/i)) && (
                                     <Tooltip content="Preview">
                                       <button
+                                        type="button"
                                         onClick={() =>
                                           fetchFilePreview(file.name)
                                         }
@@ -863,8 +907,8 @@ function StorageManager({ config }: StorageManagerProps) {
         <Modal.Body>
           <div className="space-y-6">
             <p className="text-base leading-relaxed text-gray-500 dark:text-gray-400">
-              Are you sure you want to delete the file "{fileToDelete}"? This
-              action cannot be undone.
+              Are you sure you want to delete the file &quot;{fileToDelete}
+              &quot;? This action cannot be undone.
             </p>
           </div>
         </Modal.Body>
@@ -953,22 +997,7 @@ function StorageManager({ config }: StorageManagerProps) {
         <Modal.Body>
           {previewData && (
             <div className="flex justify-center">
-              {previewData.contentType.startsWith('image/') ? (
-                <img
-                  src={`data:${previewData.contentType};base64,${previewData.data}`}
-                  alt="Preview"
-                  className="max-w-full max-h-[70vh] object-contain"
-                />
-              ) : previewData.contentType === 'application/pdf' ? (
-                <iframe
-                  src={`data:application/pdf;base64,${previewData.data}`}
-                  width="100%"
-                  height="600px"
-                  title="PDF Preview"
-                />
-              ) : (
-                <p>Preview not available for this file type.</p>
-              )}
+              {renderPreviewContent(previewData)}
             </div>
           )}
         </Modal.Body>

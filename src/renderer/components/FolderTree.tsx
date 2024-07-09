@@ -1,12 +1,11 @@
+/** eslint-disable jsx-a11y/click-events-have-key-events */
+/** eslint-disable jsx-a11y/no-static-element-interactions */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   HiOutlineFolder,
   HiChevronRight,
   HiChevronDown,
   HiSearch,
-  HiPlus,
-  HiPencil,
-  HiTrash,
   HiOutlineChevronDoubleDown,
   HiOutlineChevronDoubleUp,
 } from 'react-icons/hi';
@@ -57,6 +56,7 @@ function FolderTree({
   );
 
   useEffect(() => {
+    // eslint-disable-next-line no-undef
     const timeouts: NodeJS.Timeout[] = [];
     animatingFolders.forEach((folderPath) => {
       const timeout = setTimeout(() => {
@@ -74,10 +74,6 @@ function FolderTree({
     };
   }, [animatingFolders]);
 
-  useEffect(() => {
-    fetchFolderStructure();
-  }, [bucketName]);
-
   const fetchFolderStructure = async () => {
     setIsLoading(true); // Set loading to true when fetching starts
     try {
@@ -93,7 +89,12 @@ function FolderTree({
     }
   };
 
-  const toggleFolder = (path: string) => {
+  useEffect(() => {
+    fetchFolderStructure();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bucketName]);
+
+  const toggleFolder = useCallback((path: string) => {
     setExpandedFolders((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(path)) {
@@ -103,6 +104,14 @@ function FolderTree({
       }
       return newSet;
     });
+  }, []);
+
+  const getAllPaths = (node: FolderNode): string[] => {
+    let paths = [node.path];
+    node.children.forEach((child) => {
+      paths = [...paths, ...getAllPaths(child)];
+    });
+    return paths;
   };
 
   const expandAll = () => {
@@ -114,14 +123,6 @@ function FolderTree({
 
   const collapseAll = () => {
     setExpandedFolders(new Set());
-  };
-
-  const getAllPaths = (node: FolderNode): string[] => {
-    let paths = [node.path];
-    node.children.forEach((child) => {
-      paths = [...paths, ...getAllPaths(child)];
-    });
-    return paths;
   };
 
   const handleSearch = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -138,11 +139,14 @@ function FolderTree({
     [searchTerm],
   );
 
-  const handleContextMenu = (event: React.MouseEvent, path: string) => {
-    event.preventDefault();
-    setContextMenu({ x: event.clientX, y: event.clientY, path });
-    setSelectedFolderPath(path);
-  };
+  const handleContextMenu = useCallback(
+    (event: React.MouseEvent, path: string) => {
+      event.preventDefault();
+      setContextMenu({ x: event.clientX, y: event.clientY, path });
+      setSelectedFolderPath(path);
+    },
+    [],
+  );
 
   const closeContextMenu = useCallback(() => {
     setContextMenu(null);
@@ -253,6 +257,20 @@ function FolderTree({
     }
   };
 
+  const getFolderIcon = (hasChildren: boolean, isExpanded: boolean) => {
+    if (!hasChildren) {
+      return <span className="w-5" aria-hidden="true" />;
+    }
+    if (isExpanded) {
+      return (
+        <HiChevronDown className="w-5 h-5 text-gray-500" aria-hidden="true" />
+      );
+    }
+    return (
+      <HiChevronRight className="w-5 h-5 text-gray-500" aria-hidden="true" />
+    );
+  };
+
   const renderFolder = useCallback(
     (folder: FolderNode, level: number = 0): React.ReactNode => {
       const isExpanded = expandedFolders.has(folder.path);
@@ -276,27 +294,26 @@ function FolderTree({
             opacity: isAnimating ? 0 : 1,
           }}
         >
-          <div
-            className="flex items-center cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 p-1 rounded"
+          <button
+            type="button"
+            className="flex items-center w-full text-left cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 p-1 rounded focus:bg-gray-200 dark:focus:bg-gray-600 transition-all duration-150 ease-in-out"
             style={{ marginLeft: `${level * 20}px` }}
             onClick={() => {
               toggleFolder(folder.path);
               onFolderSelect(folder.path);
             }}
             onContextMenu={(e) => handleContextMenu(e, folder.path)}
+            aria-label={`${folder.name} ${
+              folder.children.length > 0 ? 'folder' : 'file'
+            } ${isExpanded ? 'expanded' : 'collapsed'}`}
           >
-            {folder.children.length > 0 ? (
-              isExpanded ? (
-                <HiChevronDown className="w-5 h-5 text-gray-500" />
-              ) : (
-                <HiChevronRight className="w-5 h-5 text-gray-500" />
-              )
-            ) : (
-              <span className="w-5" />
-            )}
-            <HiOutlineFolder className="w-5 h-5 text-yellow-500 mr-2" />
+            {getFolderIcon(folder.children.length > 0, isExpanded)}
+            <HiOutlineFolder
+              className="w-5 h-5 text-yellow-500 mr-2"
+              aria-hidden="true"
+            />
             <span className="text-sm dark:text-blue-400">{folder.name}</span>
-          </div>
+          </button>
           {(isExpanded || searchTerm) &&
             folder.children.map((child) => renderFolder(child, level + 1))}
         </div>
@@ -312,6 +329,22 @@ function FolderTree({
       folderMatchesSearch,
     ],
   );
+
+  const renderContent = () => {
+    if (isLoading) {
+      return (
+        <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75 dark:bg-gray-800 dark:bg-opacity-75">
+          <Spinner size="xl" />
+        </div>
+      );
+    }
+
+    if (!folderStructure) {
+      return <p>No folders found</p>;
+    }
+
+    return renderFolder(folderStructure);
+  };
 
   return (
     <div className="folder-tree h-full flex flex-col">
@@ -347,17 +380,7 @@ function FolderTree({
           </Tooltip>
         </div>
       </div>
-      <div className="flex-grow overflow-auto relative">
-        {isLoading ? (
-          <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75 dark:bg-gray-800 dark:bg-opacity-75">
-            <Spinner size="xl" />
-          </div>
-        ) : folderStructure ? (
-          renderFolder(folderStructure)
-        ) : (
-          <p>No folders found</p>
-        )}
-      </div>
+      <div className="flex-grow overflow-auto relative">{renderContent()}</div>
       {contextMenu && (
         <div ref={contextMenuRef}>
           <ContextMenu

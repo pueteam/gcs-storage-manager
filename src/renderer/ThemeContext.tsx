@@ -1,4 +1,10 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useMemo,
+} from 'react';
 
 type Theme = 'light' | 'dark' | 'system';
 
@@ -31,17 +37,17 @@ export function ThemeProvider({ children }: any) {
       } else {
         document.documentElement.classList.remove('dark');
       }
+    } else if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
     } else {
-      if (theme === 'dark') {
-        document.documentElement.classList.add('dark');
-      } else {
-        document.documentElement.classList.remove('dark');
-      }
+      document.documentElement.classList.remove('dark');
     }
   }, [theme]);
 
+  const contextValue = useMemo(() => ({ theme, setTheme }), [theme]);
+
   return (
-    <ThemeContext.Provider value={{ theme, setTheme }}>
+    <ThemeContext.Provider value={contextValue}>
       {children}
     </ThemeContext.Provider>
   );
