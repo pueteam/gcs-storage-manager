@@ -534,7 +534,9 @@ function StorageManager({ config }: StorageManagerProps) {
       }`}
     >
       <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold dark:text-white">Storage Manager</h1>
+        <h1 className="text-2xl font-bold dark:text-white">
+          GCS Storage Manager
+        </h1>
         <Button color="light" onClick={handleConfigureClick}>
           <HiCog className="mr-2 h-5 w-5" />
           Configure

@@ -208,7 +208,7 @@ function FolderTree({
       try {
         await window.electron.ipcRenderer.invoke('create-folder-tree', {
           bucketName,
-          path: `${selectedFolderPath}/${newFolderName}`,
+          pth: `${selectedFolderPath}/${newFolderName}`,
         });
         setAnimatingFolders((prev) =>
           new Set(prev).add(`${selectedFolderPath}/${newFolderName}`),
@@ -247,7 +247,7 @@ function FolderTree({
       setAnimatingFolders((prev) => new Set(prev).add(selectedFolderPath));
       await window.electron.ipcRenderer.invoke('delete-folder', {
         bucketName,
-        path: selectedFolderPath,
+        p: selectedFolderPath,
       });
       fetchFolderStructure();
       setDeleteModalOpen(false);
@@ -289,7 +289,7 @@ function FolderTree({
                   ${isAnimating ? 'animate-folder' : ''}
                 `}
           style={{
-            marginLeft: `${level * 20}px`,
+            marginLeft: `${level * 0}px`,
             maxHeight: isAnimating || isExpanded ? '1000px' : '30px', // Adjust based on your needs
             opacity: isAnimating ? 0 : 1,
           }}
@@ -297,7 +297,7 @@ function FolderTree({
           <button
             type="button"
             className="flex items-center w-full text-left cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 p-1 rounded focus:bg-gray-200 dark:focus:bg-gray-600 transition-all duration-150 ease-in-out"
-            style={{ marginLeft: `${level * 20}px` }}
+            style={{ marginLeft: `${level * 15}px` }}
             onClick={() => {
               toggleFolder(folder.path);
               onFolderSelect(folder.path);
@@ -434,10 +434,10 @@ function FolderTree({
       <Modal show={deleteModalOpen} onClose={() => setDeleteModalOpen(false)}>
         <Modal.Header>Delete Folder</Modal.Header>
         <Modal.Body>
-          <p>
+          <p className="dark:text-slate-400">
             Are you sure you want to delete this folder and all its contents?
           </p>
-          <p className="font-bold">{selectedFolderPath}</p>
+          <p className="font-bold dark:text-white">{selectedFolderPath}</p>
         </Modal.Body>
         <Modal.Footer>
           <Button color="failure" onClick={deleteFolder}>
