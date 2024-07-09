@@ -157,27 +157,33 @@ export default class MenuBuilder {
         {
           label: 'Learn More',
           click() {
-            shell.openExternal('https://electronjs.org');
+            shell.openExternal(
+              'https://github.com/pueteam/gcs-storage-manager',
+            );
           },
         },
         {
           label: 'Documentation',
           click() {
             shell.openExternal(
-              'https://github.com/electron/electron/tree/main/docs#readme',
+              'https://github.com/pueteam/gcs-storage-manager/tree/main/docs#readme',
             );
           },
         },
         {
           label: 'Community Discussions',
           click() {
-            shell.openExternal('https://www.electronjs.org/community');
+            shell.openExternal(
+              'https://github.com/pueteam/gcs-storage-manager',
+            );
           },
         },
         {
           label: 'Search Issues',
           click() {
-            shell.openExternal('https://github.com/electron/electron/issues');
+            shell.openExternal(
+              'https://github.com/pueteam/gcs-storage-manager/issues',
+            );
           },
         },
       ],
@@ -258,27 +264,33 @@ export default class MenuBuilder {
           {
             label: 'Learn More',
             click() {
-              shell.openExternal('https://electronjs.org');
+              shell.openExternal(
+                'https://github.com/pueteam/gcs-storage-manager',
+              );
             },
           },
           {
             label: 'Documentation',
             click() {
               shell.openExternal(
-                'https://github.com/electron/electron/tree/main/docs#readme',
+                'https://github.com/pueteam/gcs-storage-manager/tree/main/docs#readme',
               );
             },
           },
           {
             label: 'Community Discussions',
             click() {
-              shell.openExternal('https://www.electronjs.org/community');
+              shell.openExternal(
+                'https://github.com/pueteam/gcs-storage-manager',
+              );
             },
           },
           {
             label: 'Search Issues',
             click() {
-              shell.openExternal('https://github.com/electron/electron/issues');
+              shell.openExternal(
+                'https://github.com/pueteam/gcs-storage-manager/issues',
+              );
             },
           },
         ],

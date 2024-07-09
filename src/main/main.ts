@@ -25,6 +25,15 @@ class AppUpdater {
   }
 }
 
+// Define a custom type for the getFiles response
+interface GetFilesResponse {
+  0: any[]; // files
+  1: any; // nextQuery
+  2: {
+    prefixes?: string[];
+  };
+}
+
 let mainWindow: BrowserWindow | null = null;
 let storage: Storage | null = null;
 
@@ -87,10 +96,14 @@ ipcMain.handle('list-files', async (event, bucketName, prefix = '') => {
     const [files] = await storage
       .bucket(bucketName)
       .getFiles({ prefix, delimiter: '/' });
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const [f, nextQuery, folders] = await storage
-      .bucket(bucketName)
-      .getFiles({ prefix, delimiter: '/', autoPaginate: false });
+
+    const response = (await storage.bucket(bucketName).getFiles({
+      prefix,
+      delimiter: '/',
+      autoPaginate: false,
+    })) as unknown as GetFilesResponse;
+
+    const apiResponse = response[2]; // Get the third element of the response array
 
     const fileDetails = await Promise.all(
       files
@@ -107,12 +120,14 @@ ipcMain.handle('list-files', async (event, bucketName, prefix = '') => {
     );
 
     const folderDetails =
-      folders.prefixes?.map((folderName: string) => ({
-        name: path.basename(folderName),
-        size: 0,
-        updated: '',
-        isFolder: true,
-      })) || [];
+      apiResponse && apiResponse.prefixes
+        ? apiResponse.prefixes.map((folderName: string) => ({
+            name: path.basename(folderName),
+            size: 0,
+            updated: '',
+            isFolder: true,
+          }))
+        : [];
 
     return [...folderDetails, ...fileDetails];
   } catch (error) {
@@ -276,7 +291,10 @@ ipcMain.handle(
           oldPath,
           oldPath.split('/').slice(0, -1).concat(newName).join('/'),
         );
-        return storage.bucket(bucketName).file(file.name).move(newPath);
+        if (storage) {
+          return storage.bucket(bucketName).file(file.name).move(newPath);
+        }
+        return '';
       });
 
       await Promise.all(moveOperations);
@@ -319,7 +337,10 @@ ipcMain.handle('get-file-preview', async (event, { bucketName, filePath }) => {
     const [metadata] = await file.getMetadata();
     const { contentType } = metadata;
 
-    if (contentType.startsWith('image/') || contentType === 'application/pdf') {
+    if (
+      contentType &&
+      (contentType.startsWith('image/') || contentType === 'application/pdf')
+    ) {
       const [fileContents] = await file.download();
       return {
         contentType,
