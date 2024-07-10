@@ -4,15 +4,17 @@ import {
   Routes,
   Route,
   Navigate,
+  useNavigate,
 } from 'react-router-dom';
 import { Flowbite, Modal, Button } from 'flowbite-react';
 import './App.css';
 import ConfigScreen from './components/ConfigScreen';
-import StorageManager from './components/StorageManager';
+import BucketList from './components/BucketList';
+import BucketContents from './components/BucketContents';
 import { ThemeProvider } from './ThemeContext';
 import 'tailwindcss/tailwind.css';
 
-export default function App() {
+function AppContent() {
   const [config, setConfig] = useState<{
     projectId: string;
     credentialsFile: string;
@@ -20,6 +22,7 @@ export default function App() {
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const loadConfig = async () => {
@@ -30,7 +33,6 @@ export default function App() {
           setConfig(savedConfig);
         }
       } catch (e) {
-        // console.error('Error loading config:', e);
         setError(
           'Failed to load configuration. Please check your settings and try again.',
         );
@@ -39,65 +41,78 @@ export default function App() {
       }
     };
     loadConfig();
-  }, []);
+
+    // Add event listener for 'navigate-to-config'
+    const handleNavigateToConfig = () => {
+      navigate('/config');
+    };
+    window.electron.ipcRenderer.on(
+      'navigate-to-config',
+      handleNavigateToConfig,
+    );
+
+    // Clean up event listener
+    return () => {
+      window.electron.ipcRenderer.removeListener(
+        'navigate-to-config',
+        handleNavigateToConfig,
+      );
+    };
+  }, [navigate]);
 
   const handleErrorClose = () => {
     setError(null);
   };
 
   if (loading) {
-    return <div>Loading...</div>; // You could use a Flowbite Spinner here
+    return <div>Loading...</div>;
   }
 
+  return (
+    <div className="container mx-auto p-4">
+      <Routes>
+        <Route
+          path="/"
+          element={config ? <BucketList /> : <Navigate to="/config" replace />}
+        />
+        <Route
+          path="/bucket/:bucketName"
+          element={
+            config ? <BucketContents /> : <Navigate to="/config" replace />
+          }
+        />
+        <Route
+          path="/config"
+          element={
+            <ConfigScreen setConfig={setConfig} initialConfig={config} />
+          }
+        />
+      </Routes>
+      {/* Error Modal */}
+      <Modal show={error !== null} onClose={handleErrorClose}>
+        <Modal.Header>Error</Modal.Header>
+        <Modal.Body>
+          <div className="space-y-6">
+            <p className="text-base leading-relaxed text-gray-500 dark:text-gray-400">
+              {error}
+            </p>
+          </div>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button onClick={handleErrorClose}>Close</Button>
+        </Modal.Footer>
+      </Modal>
+    </div>
+  );
+}
+
+export default function App() {
   return (
     <ThemeProvider>
       <Flowbite>
         <Router>
-          <div className="container mx-auto p-4">
-            <Routes>
-              <Route
-                path="/"
-                element={
-                  config ? (
-                    <Navigate to="/storage" replace />
-                  ) : (
-                    <ConfigScreen setConfig={setConfig} />
-                  )
-                }
-              />
-              <Route
-                path="/storage"
-                element={
-                  config ? (
-                    <StorageManager config={config} />
-                  ) : (
-                    <Navigate to="/" replace />
-                  )
-                }
-              />
-              <Route
-                path="/config"
-                element={
-                  <ConfigScreen setConfig={setConfig} initialConfig={config} />
-                }
-              />
-            </Routes>
-          </div>
+          <AppContent />
         </Router>
-        {/* Error Modal */}
-        <Modal show={error !== null} onClose={handleErrorClose}>
-          <Modal.Header>Error</Modal.Header>
-          <Modal.Body>
-            <div className="space-y-6">
-              <p className="text-base leading-relaxed text-gray-500 dark:text-gray-400">
-                {error}
-              </p>
-            </div>
-          </Modal.Body>
-          <Modal.Footer>
-            <Button onClick={handleErrorClose}>Close</Button>
-          </Modal.Footer>
-        </Modal>
       </Flowbite>
     </ThemeProvider>
   );

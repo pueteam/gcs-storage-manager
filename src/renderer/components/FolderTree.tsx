@@ -17,6 +17,8 @@ interface FolderTreeProps {
   bucketName: string;
   onFolderSelect: (path: string) => void;
   onFolderChange: () => void;
+  selectedFolder: string;
+  refreshTrigger: number;
 }
 
 interface FolderNode {
@@ -29,6 +31,8 @@ function FolderTree({
   bucketName,
   onFolderSelect,
   onFolderChange,
+  selectedFolder,
+  refreshTrigger,
 }: FolderTreeProps) {
   const [folderStructure, setFolderStructure] = useState<FolderNode | null>(
     null,
@@ -92,7 +96,7 @@ function FolderTree({
   useEffect(() => {
     fetchFolderStructure();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bucketName]);
+  }, [bucketName, refreshTrigger]);
 
   const toggleFolder = useCallback((path: string) => {
     setExpandedFolders((prev) => {
@@ -257,25 +261,32 @@ function FolderTree({
     }
   };
 
-  const getFolderIcon = (hasChildren: boolean, isExpanded: boolean) => {
-    if (!hasChildren) {
-      return <span className="w-5" aria-hidden="true" />;
-    }
-    if (isExpanded) {
-      return (
-        <HiChevronDown className="w-5 h-5 text-gray-500" aria-hidden="true" />
-      );
-    }
-    return (
-      <HiChevronRight className="w-5 h-5 text-gray-500" aria-hidden="true" />
-    );
-  };
-
   const renderFolder = useCallback(
     (folder: FolderNode, level: number = 0): React.ReactNode => {
       const isExpanded = expandedFolders.has(folder.path);
       const isAnimating = animatingFolders.has(folder.path);
       const matchesSearch = folderMatchesSearch(folder);
+      const isSelected = folder.path === selectedFolder;
+
+      const getFolderIcon = (hasChildren: boolean, isExpandedF: boolean) => {
+        if (!hasChildren) {
+          return <span className="w-5" aria-hidden="true" />;
+        }
+        if (isExpandedF) {
+          return (
+            <HiChevronDown
+              className="w-5 h-5 text-gray-500"
+              aria-hidden="true"
+            />
+          );
+        }
+        return (
+          <HiChevronRight
+            className="w-5 h-5 text-gray-500"
+            aria-hidden="true"
+          />
+        );
+      };
 
       if (searchTerm && !matchesSearch) {
         return null;
@@ -285,18 +296,20 @@ function FolderTree({
         <div
           key={folder.path}
           className={`
-                  transition-all duration-300 ease-in-out
-                  ${isAnimating ? 'animate-folder' : ''}
-                `}
+              transition-all duration-300 ease-in-out
+              ${isAnimating ? 'animate-folder' : ''}
+            `}
           style={{
             marginLeft: `${level * 0}px`,
-            maxHeight: isAnimating || isExpanded ? '1000px' : '30px', // Adjust based on your needs
+            maxHeight: isAnimating || isExpanded ? '1000px' : '30px',
             opacity: isAnimating ? 0 : 1,
           }}
         >
           <button
             type="button"
-            className="flex items-center w-full text-left cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 p-1 rounded focus:bg-gray-200 dark:focus:bg-gray-600 transition-all duration-150 ease-in-out"
+            className={`flex items-center w-full text-left cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 p-1 rounded focus:bg-gray-200 dark:focus:bg-gray-600 transition-all duration-150 ease-in-out ${
+              isSelected ? 'bg-gray-100 dark:bg-gray-700' : ''
+            }`}
             style={{ marginLeft: `${level * 15}px` }}
             onClick={() => {
               toggleFolder(folder.path);
@@ -327,6 +340,7 @@ function FolderTree({
       onFolderSelect,
       handleContextMenu,
       folderMatchesSearch,
+      selectedFolder,
     ],
   );
 

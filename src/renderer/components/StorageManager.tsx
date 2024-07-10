@@ -1,14 +1,6 @@
-import React, {
-  useState,
-  useEffect,
-  useMemo,
-  useCallback,
-  useRef,
-} from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Button,
-  Card,
-  FileInput,
   Spinner,
   Table,
   TextInput,
@@ -24,25 +16,17 @@ import {
   HiOutlineDownload,
   HiOutlineTrash,
   HiCheck,
-  HiCog,
   HiOutlineFolder,
   HiOutlineChevronLeft,
   HiOutlineInformationCircle,
   HiOutlineEye,
-  HiOutlineSwitchHorizontal,
-  HiSearch,
-  HiOutlineRefresh,
+  HiOutlineUpload,
+  HiOutlineDocument,
 } from 'react-icons/hi';
-import { useNavigate } from 'react-router-dom';
+import { IpcRendererEvent } from 'electron';
 import { useTheme } from '../ThemeContext';
-import FolderTree from './FolderTree';
-
-interface BucketInfo {
-  name: string;
-  created: string;
-  location: string;
-  storageClass: string;
-}
+import BulkUpload from './BulkUpload';
+import FileUpload from './FileUpload';
 
 interface FileInfo {
   name: string;
@@ -53,28 +37,26 @@ interface FileInfo {
 }
 
 interface StorageManagerProps {
-  config: { projectId: string; credentialsFile: string } | null;
+  selectedBucket: string;
+  currentPath: string;
+  refreshTrigger: number;
+  onFolderSelect: (path: string) => void;
+  onFolderChange: () => void;
 }
 
-const transitionStyles = `
-  .fade-transition {
-    transition: opacity 300ms ease-in-out, max-height 300ms ease-in-out;
-    opacity: 0;
-    max-height: 0;
-    overflow: hidden;
-  }
-  .fade-transition.show {
-    opacity: 1;
-    max-height: 1000px; /* Adjust this value based on your content */
-  }
-`;
+interface DownloadProgressData {
+  filePath: string;
+  progress: number;
+}
 
-function StorageManager({ config }: StorageManagerProps) {
-  const navigate = useNavigate();
+function StorageManager({
+  selectedBucket,
+  currentPath,
+  refreshTrigger,
+  onFolderSelect,
+  onFolderChange,
+}: StorageManagerProps) {
   const { theme } = useTheme();
-  const [buckets, setBuckets] = useState<BucketInfo[]>([]);
-  const [filteredBuckets, setFilteredBuckets] = useState<BucketInfo[]>([]);
-  const [selectedBucket, setSelectedBucket] = useState('');
   const [files, setFiles] = useState<FileInfo[]>([]);
   const [fileSearchTerm, setFileSearchTerm] = useState('');
   const [sortColumn, setSortColumn] = useState<keyof FileInfo>('name');
@@ -85,7 +67,6 @@ function StorageManager({ config }: StorageManagerProps) {
   const [fileToDelete, setFileToDelete] = useState<string | null>(null);
   const [showToast, setShowToast] = useState(false);
   const [downloadPath, setDownloadPath] = useState('');
-  const [currentPath, setCurrentPath] = useState('');
   const [newFolderModalOpen, setNewFolderModalOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [downloadProgress, setDownloadProgress] = useState<{
@@ -101,63 +82,21 @@ function StorageManager({ config }: StorageManagerProps) {
     data: string;
   } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<{
-    [key: string]: number;
-  }>({});
-  const [isUploading, setIsUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [showBucketList, setShowBucketList] = useState(true);
-  const [bucketListVisible, setBucketListVisible] = useState(true);
-  const [folderStructureVisible, setFolderStructureVisible] = useState(false);
-  const [bucketSearchTerm, setBucketSearchTerm] = useState('');
-  const [isLoadingBuckets, setIsLoadingBuckets] = useState(false);
-  const [bucketCurrentPage, setBucketCurrentPage] = useState(1);
-  const [bucketsPerPage, setBucketsPerPage] = useState(10);
-
-  const fetchBuckets = useCallback(async () => {
-    setIsLoadingBuckets(true);
-    try {
-      const bucketList: BucketInfo[] = await window.electron.ipcRenderer.invoke(
-        'list-buckets-with-info',
-      );
-      setBuckets(bucketList);
-      setFilteredBuckets(bucketList);
-      setBucketCurrentPage(1);
-    } catch (error) {
-      console.error('Error fetching buckets:', error);
-    } finally {
-      setIsLoadingBuckets(false);
-    }
-  }, []);
+  const [bulkUploadModalOpen, setBulkUploadModalOpen] = useState(false);
+  const [fileUploadModalOpen, setFileUploadModalOpen] = useState(false);
 
   useEffect(() => {
-    if (!config) {
-      navigate('/');
-      return;
-    }
-    fetchBuckets();
-  }, [config, navigate, fetchBuckets]);
-
-  useEffect(() => {
-    const filtered = buckets.filter((bucket) =>
-      bucket.name.toLowerCase().includes(bucketSearchTerm.toLowerCase()),
-    );
-    setFilteredBuckets(filtered);
-    setBucketCurrentPage(1);
-  }, [bucketSearchTerm, buckets]);
-
-  useEffect(() => {
-    const handleDownloadProgress = ({
-      filePath,
-      progress,
-    }: {
-      filePath: string;
-      progress: number;
-    }) => {
+    const handleDownloadProgress = (
+      _event: IpcRendererEvent,
+      { filePath, progress }: DownloadProgressData,
+    ) => {
       setDownloadProgress((prev) => ({ ...prev, [filePath]: progress }));
     };
 
-    window.electron.ipcRenderer.on('download-progress', handleDownloadProgress);
+    window.electron.ipcRenderer.on<DownloadProgressData>(
+      'download-progress',
+      handleDownloadProgress,
+    );
 
     return () => {
       window.electron.ipcRenderer.removeListener(
@@ -166,59 +105,6 @@ function StorageManager({ config }: StorageManagerProps) {
       );
     };
   }, []);
-
-  useEffect(() => {
-    const handleUploadProgress = ({
-      fileName,
-      progress,
-    }: {
-      fileName: string;
-      progress: number;
-    }) => {
-      if (!fileName) {
-        return;
-      }
-      setUploadProgress((prev) => ({ ...prev, [fileName]: progress }));
-    };
-
-    window.electron.ipcRenderer.on('upload-progress', handleUploadProgress);
-
-    return () => {
-      window.electron.ipcRenderer.removeListener(
-        'upload-progress',
-        handleUploadProgress,
-      );
-    };
-  }, []);
-
-  const bucketIndexOfLastItem = bucketCurrentPage * bucketsPerPage;
-  const bucketIndexOfFirstItem = bucketIndexOfLastItem - bucketsPerPage;
-  const currentBuckets = filteredBuckets.slice(
-    bucketIndexOfFirstItem,
-    bucketIndexOfLastItem,
-  );
-
-  const onBucketPageChange = (page: number) => setBucketCurrentPage(page);
-
-  useEffect(() => {
-    if (showBucketList) {
-      setBucketListVisible(true);
-    } else {
-      setTimeout(() => setBucketListVisible(false), 300); // Match this with your transition duration
-    }
-  }, [showBucketList]);
-
-  useEffect(() => {
-    if (selectedBucket && !showBucketList) {
-      setFolderStructureVisible(true);
-    } else {
-      setTimeout(() => setFolderStructureVisible(false), 300);
-    }
-  }, [selectedBucket, showBucketList]);
-
-  const toggleBucketList = () => {
-    setShowBucketList((prev) => !prev);
-  };
 
   const fetchFiles = useCallback(async (bucketName: string, path: string) => {
     setIsLoading(true);
@@ -237,19 +123,23 @@ function StorageManager({ config }: StorageManagerProps) {
     }
   }, []);
 
-  const handleBucketSelect = async (bucketName: string) => {
-    setSelectedBucket(bucketName);
-    setCurrentPath('');
-    setShowBucketList(false);
-    await fetchFiles(bucketName, '');
-  };
+  useEffect(() => {
+    if (selectedBucket) {
+      fetchFiles(selectedBucket, currentPath);
+    }
+  }, [selectedBucket, currentPath, fetchFiles, refreshTrigger]);
+
+  useEffect(() => {
+    if (selectedBucket) {
+      fetchFiles(selectedBucket, currentPath);
+    }
+  }, [selectedBucket, currentPath, refreshTrigger, fetchFiles]);
 
   const handleFolderClick = (folderName: string) => {
     const newPath = currentPath
       ? `${currentPath}/${folderName}`
       : `${folderName}`;
-    setCurrentPath(newPath);
-    fetchFiles(selectedBucket, newPath);
+    onFolderSelect(newPath);
   };
 
   const handleBackClick = () => {
@@ -258,70 +148,30 @@ function StorageManager({ config }: StorageManagerProps) {
       .split('/')
       .slice(0, -1)
       .join('/');
-    setCurrentPath(newPath);
-    fetchFiles(selectedBucket, newPath);
+    onFolderSelect(newPath);
   };
 
-  const handleFileUpload = async (
-    event: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    const f = event.target.files;
-    if (!f || f.length === 0) return;
+  const showNotification = useCallback((title: string, body: string) => {
+    const CLICK_MESSAGE = 'Notification clicked';
 
-    setIsUploading(true);
-    setUploadProgress({});
-
-    const uploadPromises = Array.from(f).map(async (file) => {
-      const destination = currentPath
-        ? `${currentPath}/${file.name}`
-        : file.name;
-
-      try {
-        await window.electron.ipcRenderer.invoke('upload-file', {
-          bucketName: selectedBucket,
-          filePath: file.path,
-          destination,
-        });
-        // You can update progress here if needed
-        setUploadProgress((prev) => ({
-          ...prev,
-          [file.name]: 100,
-        }));
-      } catch (error) {
-        console.error(`Error uploading file ${file.name}:`, error);
-        setUploadProgress((prev) => ({
-          ...prev,
-          [file.name]: 0,
-        }));
-        // Optionally, show an error message to the user
-      }
-    });
-
-    try {
-      await Promise.all(uploadPromises);
-    } finally {
-      setIsUploading(false);
-      fetchFiles(selectedBucket, currentPath);
-
-      // Clear the file input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    }
-  };
+    new Notification(title, { body }).onclick = () =>
+      console.warn(CLICK_MESSAGE);
+  }, []);
 
   const handleFileDownload = async (fileName: string) => {
     try {
       const filePath = currentPath ? `${currentPath}/${fileName}` : fileName;
       setDownloadProgress((prev) => ({ ...prev, [filePath]: 0 }));
 
-      const path = await window.electron.ipcRenderer.invoke('download-file', {
-        bucketName: selectedBucket,
-        filePath,
-      });
+      const downloadedPath = await window.electron.ipcRenderer.invoke(
+        'download-file',
+        {
+          bucketName: selectedBucket,
+          filePath,
+        },
+      );
 
-      console.log(`File downloaded to: ${path}`);
-      setDownloadPath(path);
+      setDownloadPath(downloadedPath);
       setShowToast(true);
       setTimeout(() => {
         setShowToast(false);
@@ -330,7 +180,7 @@ function StorageManager({ config }: StorageManagerProps) {
           delete newProgress[filePath];
           return newProgress;
         });
-      }, 5000);
+      }, 3000);
     } catch (error) {
       console.error('Error downloading file:', error);
     }
@@ -357,6 +207,7 @@ function StorageManager({ config }: StorageManagerProps) {
       setDeleteModalOpen(false);
       setFileToDelete(null);
       fetchFiles(selectedBucket, currentPath);
+      onFolderChange();
     } catch (error) {
       console.error('Error deleting file:', error);
     }
@@ -380,27 +231,25 @@ function StorageManager({ config }: StorageManagerProps) {
       fetchFiles(selectedBucket, currentPath);
       setNewFolderModalOpen(false);
       setNewFolderName('');
+      onFolderChange();
+      // Show a success notification
+      showNotification(
+        'Folder Created',
+        `Folder "${newFolderName}" has been created successfully.`,
+      );
     } catch (error) {
       console.error('Error creating folder:', error);
+      showNotification(
+        'Error',
+        `Failed to create folder "${newFolderName}". Please try again.`,
+      );
     }
   };
 
   const handleBreadcrumbClick = (index: number) => {
     const newPath = currentPath.split('/').slice(0, index).join('/');
-    setCurrentPath(newPath);
-    fetchFiles(selectedBucket, newPath);
+    onFolderSelect(newPath);
   };
-
-  const handleFolderSelect = (path: string) => {
-    setCurrentPath(path);
-    fetchFiles(selectedBucket, path);
-  };
-
-  const refreshCurrentFolder = useCallback(() => {
-    if (selectedBucket) {
-      fetchFiles(selectedBucket, currentPath);
-    }
-  }, [selectedBucket, currentPath, fetchFiles]);
 
   const formatFileSize = (bytes: number): string => {
     const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
@@ -458,10 +307,6 @@ function StorageManager({ config }: StorageManagerProps) {
   ) => {
     setItemsPerPage(Number(e.target.value));
     setCurrentPage(1); // Reset to first page when changing items per page
-  };
-
-  const handleConfigureClick = () => {
-    navigate('/config');
   };
 
   const fetchFileDetails = async (fileName: string) => {
@@ -527,381 +372,227 @@ function StorageManager({ config }: StorageManagerProps) {
     return <p>Preview not available for this file type.</p>;
   };
 
+  const renderFileActions = (file: FileInfo) => {
+    const filePath = currentPath ? `${currentPath}/${file.name}` : file.name;
+    const progress = downloadProgress[filePath];
+
+    if (progress !== undefined) {
+      return (
+        <div className="w-full">
+          <Progress progress={progress} size="sm" color="blue" />
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex items-center space-x-2">
+        <Tooltip content="Download">
+          <button
+            type="button"
+            onClick={() => handleFileDownload(file.name)}
+            className="text-gray-500 hover:text-blue-600 transition-all duration-200 ease-in-out hover:scale-110"
+          >
+            <HiOutlineDownload className="h-5 w-5" />
+          </button>
+        </Tooltip>
+        <Tooltip content="Delete">
+          <button
+            type="button"
+            onClick={() => {
+              setFileToDelete(file.name);
+              setDeleteModalOpen(true);
+            }}
+            className="text-gray-500 hover:text-red-600 transition-all duration-200 ease-in-out hover:scale-110"
+          >
+            <HiOutlineTrash className="h-5 w-5" />
+          </button>
+        </Tooltip>
+        <Tooltip content="Info">
+          <button
+            type="button"
+            onClick={() => !file.isFolder && fetchFileDetails(file.name)}
+            className="text-gray-500 hover:text-green-600 transition-all duration-200 ease-in-out hover:scale-110"
+            disabled={file.isFolder}
+          >
+            <HiOutlineInformationCircle className="h-5 w-5" />
+          </button>
+        </Tooltip>
+        {!file.isFolder &&
+          (file.name.endsWith('.pdf') ||
+            file.name.match(/\.(jpe?g|png|gif)$/i)) && (
+            <Tooltip content="Preview">
+              <button
+                type="button"
+                onClick={() => fetchFilePreview(file.name)}
+                className="text-gray-500 hover:text-purple-600 transition-all duration-200 ease-in-out hover:scale-110"
+              >
+                <HiOutlineEye className="h-5 w-5" />
+              </button>
+            </Tooltip>
+          )}
+      </div>
+    );
+  };
+
   return (
     <div
       className={`space-y-4 bg-white dark:bg-slate-800 ${
         theme === 'dark' ? 'dark' : ''
       }`}
     >
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold dark:text-white">
-          GCS Storage Manager
-        </h1>
-        <Button color="light" onClick={handleConfigureClick}>
-          <HiCog className="mr-2 h-5 w-5" />
-          Configure
-        </Button>
-      </div>
-      <style>{transitionStyles}</style>
-      <div className="grid grid-cols-4 gap-4">
-        {bucketListVisible && (
-          <Card className={`col-span-4 ${showBucketList ? 'show' : ''}`}>
-            <div className="mb-4 flex justify-between items-center">
-              <h2 className="text-xl font-semibold dark:text-white">Buckets</h2>
-              <div className="flex items-center">
-                <TextInput
-                  type="text"
-                  placeholder="Search buckets..."
-                  value={bucketSearchTerm}
-                  onChange={(e) => setBucketSearchTerm(e.target.value)}
-                  icon={HiSearch}
-                  className="mr-2"
-                />
-                <Button
-                  color="light"
-                  onClick={fetchBuckets}
-                  disabled={isLoadingBuckets}
+      <div className="flex-grow overflow-y-auto">
+        {selectedBucket && (
+          <>
+            <div className="mb-4">
+              <Breadcrumb>
+                <Breadcrumb.Item
+                  href="#"
+                  onClick={() => handleBreadcrumbClick(0)}
                 >
-                  <HiOutlineRefresh className="mr-2 h-5 w-5" />
-                  Refresh
-                </Button>
-              </div>
-            </div>
-            <Table hoverable>
-              <Table.Head>
-                <Table.HeadCell>Bucket Name</Table.HeadCell>
-                <Table.HeadCell>Created</Table.HeadCell>
-                <Table.HeadCell>Location</Table.HeadCell>
-                <Table.HeadCell>Storage Class</Table.HeadCell>
-              </Table.Head>
-              <Table.Body className="divide-y">
-                {currentBuckets.map((bucket) => (
-                  <Table.Row
-                    key={bucket.name}
-                    className="bg-white dark:border-gray-700 dark:bg-gray-800"
-                    onClick={() => handleBucketSelect(bucket.name)}
+                  {selectedBucket}
+                </Breadcrumb.Item>
+                {currentPath.split('/').map((folder, index) => (
+                  <Breadcrumb.Item
+                    // eslint-disable-next-line react/no-array-index-key
+                    key={index}
+                    href="#"
+                    onClick={() => handleBreadcrumbClick(index + 1)}
                   >
-                    <Table.Cell className="whitespace-nowrap font-medium text-gray-900 dark:text-white">
-                      {bucket.name}
-                    </Table.Cell>
-                    <Table.Cell>
-                      {new Date(bucket.created).toLocaleString()}
-                    </Table.Cell>
-                    <Table.Cell>{bucket.location}</Table.Cell>
-                    <Table.Cell>{bucket.storageClass}</Table.Cell>
-                  </Table.Row>
+                    {folder}
+                  </Breadcrumb.Item>
                 ))}
-              </Table.Body>
-            </Table>
-            <div className="flex items-center justify-between mt-4">
-              <Pagination
-                currentPage={bucketCurrentPage}
-                totalPages={Math.ceil(filteredBuckets.length / bucketsPerPage)}
-                onPageChange={onBucketPageChange}
-                showIcons
+              </Breadcrumb>
+            </div>
+            <div className="flex justify-between mb-4">
+              {currentPath && (
+                <Button color="light" onClick={handleBackClick}>
+                  <HiOutlineChevronLeft className="mr-2 h-5 w-5" />
+                  Back
+                </Button>
+              )}
+              <Button color="light" onClick={createFolder}>
+                <HiOutlineFolder className="mr-2 h-5 w-5 text-yellow-500" />
+                New Folder
+              </Button>
+              <Button
+                color="light"
+                onClick={() => setFileUploadModalOpen(true)}
+                className="mr-2"
+              >
+                <HiOutlineDocument className="mr-2 h-5 w-5 text-green-500" />
+                Upload Files
+              </Button>
+              <Button
+                color="light"
+                onClick={() => setBulkUploadModalOpen(true)}
+              >
+                <HiOutlineUpload className="mr-2 h-5 w-5 text-blue-500" />
+                Bulk Upload
+              </Button>
+            </div>
+            <div className="mb-4 flex justify-between items-center">
+              <TextInput
+                type="text"
+                placeholder="Search files..."
+                value={fileSearchTerm}
+                onChange={(e) => setFileSearchTerm(e.target.value)}
+                className="w-1/2"
               />
               <div className="flex items-center">
-                <span className="mr-2 dark:text-slate-400">
-                  Buckets per page:
-                </span>
+                <span className="mr-2 dark:text-white">Items per page:</span>
                 <Select
-                  id="bucketsPerPage"
-                  value={bucketsPerPage.toString()}
-                  onChange={(e) => {
-                    setBucketsPerPage(Number(e.target.value));
-                    setBucketCurrentPage(1); // Reset to first page when changing items per page
-                  }}
+                  value={itemsPerPage}
+                  onChange={handleItemsPerPageChange}
                 >
-                  <option value="5">5</option>
-                  <option value="10">10</option>
-                  <option value="25">25</option>
-                  <option value="50">50</option>
+                  <option value={5}>5</option>
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
                 </Select>
               </div>
             </div>
-          </Card>
-        )}
-        {folderStructureVisible && (
-          <Card
-            className={`col-span-1 fade-transition ${
-              selectedBucket && !showBucketList ? 'show' : ''
-            } h-full`}
-          >
-            <div className="flex justify-between items-center mb-2">
-              <h2 className="text-xl font-semibold dark:text-white">
-                Folder Structure
-              </h2>
-              <Button
-                onClick={toggleBucketList}
-                size="sm"
-                color="gray"
-                pill
-                title="Change Bucket"
-              >
-                <HiOutlineSwitchHorizontal className="h-4 w-4" />
-              </Button>
-            </div>
-            <FolderTree
-              bucketName={selectedBucket}
-              onFolderSelect={handleFolderSelect}
-              onFolderChange={refreshCurrentFolder}
-            />
-          </Card>
-        )}
-        {folderStructureVisible && (
-          <Card
-            className={`${
-              selectedBucket && !showBucketList ? 'col-span-3' : 'col-span-3'
-            }`}
-          >
-            <div className="flex-grow overflow-y-auto">
-              {selectedBucket && (
-                <>
-                  <div className="mb-4">
-                    <Breadcrumb>
-                      <Breadcrumb.Item
-                        href="#"
-                        onClick={() => handleBreadcrumbClick(0)}
-                      >
-                        {selectedBucket}
-                      </Breadcrumb.Item>
-                      {currentPath.split('/').map((folder, index) => (
-                        <Breadcrumb.Item
-                          // eslint-disable-next-line react/no-array-index-key
-                          key={index}
-                          href="#"
-                          onClick={() => handleBreadcrumbClick(index + 1)}
-                        >
-                          {folder}
-                        </Breadcrumb.Item>
-                      ))}
-                    </Breadcrumb>
-                    {/*
-                    isLoading && (
-                    <div className="flex items-center">
-                      <Spinner size="sm" />
-                      <span className="ml-2">Loading...</span>
-                    </div>
-                  )
-                  */}
-                  </div>
-                  <div className="flex justify-between mb-4">
-                    {currentPath && (
-                      <Button color="light" onClick={handleBackClick}>
-                        <HiOutlineChevronLeft className="mr-2 h-5 w-5" />
-                        Back
-                      </Button>
-                    )}
-                    <Button color="light" onClick={createFolder}>
-                      <HiOutlineFolder className="mr-2 h-5 w-5 text-yellow-500" />
-                      New Folder
-                    </Button>
-                  </div>
-                  <div className="mb-4 flex justify-between items-center">
-                    <TextInput
-                      type="text"
-                      placeholder="Search files..."
-                      value={fileSearchTerm}
-                      onChange={(e) => setFileSearchTerm(e.target.value)}
-                      className="w-1/2"
-                    />
-                    <div className="flex items-center">
-                      <span className="mr-2 dark:text-white">
-                        Items per page:
-                      </span>
-                      <Select
-                        value={itemsPerPage}
-                        onChange={handleItemsPerPageChange}
-                      >
-                        <option value={5}>5</option>
-                        <option value={10}>10</option>
-                        <option value={25}>25</option>
-                        <option value={50}>50</option>
-                      </Select>
-                    </div>
-                  </div>
-                  {isLoading ? (
-                    <div className="flex justify-center items-center h-64">
-                      <Spinner size="xl" />
-                    </div>
-                  ) : (
-                    <Table>
-                      <Table.Head>
-                        <Table.HeadCell
-                          onClick={() => handleSort('name')}
-                          className="cursor-pointer"
-                        >
-                          File Name{' '}
-                          {sortColumn === 'name' &&
-                            (sortDirection === 'asc' ? '↑' : '↓')}
-                        </Table.HeadCell>
-                        <Table.HeadCell
-                          onClick={() => handleSort('size')}
-                          className="cursor-pointer"
-                        >
-                          Size{' '}
-                          {sortColumn === 'size' &&
-                            (sortDirection === 'asc' ? '↑' : '↓')}
-                        </Table.HeadCell>
-                        <Table.HeadCell
-                          onClick={() => handleSort('updated')}
-                          className="cursor-pointer"
-                        >
-                          Last Modified{' '}
-                          {sortColumn === 'updated' &&
-                            (sortDirection === 'asc' ? '↑' : '↓')}
-                        </Table.HeadCell>
-                        <Table.HeadCell>Actions</Table.HeadCell>
-                      </Table.Head>
-                      <Table.Body className="divide-y">
-                        {paginatedFiles.map((file) => (
-                          <Table.Row
-                            key={file.name}
-                            className="bg-white dark:border-gray-700 dark:bg-gray-800"
+            {isLoading ? (
+              <div className="flex justify-center items-center h-64">
+                <Spinner size="xl" />
+              </div>
+            ) : (
+              <Table>
+                <Table.Head>
+                  <Table.HeadCell
+                    onClick={() => handleSort('name')}
+                    className="cursor-pointer"
+                  >
+                    File Name{' '}
+                    {sortColumn === 'name' &&
+                      (sortDirection === 'asc' ? '↑' : '↓')}
+                  </Table.HeadCell>
+                  <Table.HeadCell
+                    onClick={() => handleSort('size')}
+                    className="cursor-pointer"
+                  >
+                    Size{' '}
+                    {sortColumn === 'size' &&
+                      (sortDirection === 'asc' ? '↑' : '↓')}
+                  </Table.HeadCell>
+                  <Table.HeadCell
+                    onClick={() => handleSort('updated')}
+                    className="cursor-pointer"
+                  >
+                    Last Modified{' '}
+                    {sortColumn === 'updated' &&
+                      (sortDirection === 'asc' ? '↑' : '↓')}
+                  </Table.HeadCell>
+                  <Table.HeadCell>Actions</Table.HeadCell>
+                </Table.Head>
+                <Table.Body className="divide-y">
+                  {paginatedFiles.map((file) => (
+                    <Table.Row
+                      key={file.name}
+                      className="bg-white dark:border-gray-700 dark:bg-gray-800"
+                    >
+                      <Table.Cell className="whitespace-nowrap font-medium text-gray-900 dark:text-white">
+                        {file.isFolder ? (
+                          <button
+                            type="button"
+                            onClick={() => handleFolderClick(file.name)}
+                            className="flex items-center text-blue-600 dark:text-blue-400 hover:underline"
                           >
-                            <Table.Cell className="whitespace-nowrap font-medium text-gray-900 dark:text-white">
-                              {file.isFolder ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleFolderClick(file.name)}
-                                  className="flex items-center text-blue-600 dark:text-blue-400 hover:underline"
-                                >
-                                  <HiOutlineFolder className="mr-2 h-5 w-5 text-yellow-500" />
-                                  {file.name}
-                                </button>
-                              ) : (
-                                file.name
-                              )}
-                            </Table.Cell>
-                            <Table.Cell>
-                              {file.isFolder ? '-' : formatFileSize(file.size)}
-                            </Table.Cell>
-                            <Table.Cell>
-                              {file.isFolder
-                                ? '-'
-                                : new Date(file.updated).toLocaleString()}
-                            </Table.Cell>
-                            <Table.Cell>
-                              {downloadProgress[file.name] !== undefined ? (
-                                <div className="w-full">
-                                  <Progress
-                                    progress={downloadProgress[file.name]}
-                                    size="lg"
-                                    labelProgress
-                                  />
-                                </div>
-                              ) : (
-                                ''
-                              )}
-                              <div className="flex items-center space-x-2">
-                                <Tooltip content="Download">
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleFileDownload(file.name)
-                                    }
-                                    className="text-gray-500 hover:text-blue-600"
-                                  >
-                                    <HiOutlineDownload className="h-5 w-5" />
-                                  </button>
-                                </Tooltip>
-                                <Tooltip content="Delete">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setFileToDelete(file.name);
-                                      setDeleteModalOpen(true);
-                                    }}
-                                    className="text-gray-500 hover:text-red-600"
-                                  >
-                                    <HiOutlineTrash className="h-5 w-5" />
-                                  </button>
-                                </Tooltip>
-                                <Tooltip content="Info">
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      !file.isFolder &&
-                                      fetchFileDetails(file.name)
-                                    }
-                                    className="text-gray-500 hover:text-green-600 transition-all duration-200 ease-in-out hover:scale-110"
-                                    disabled={file.isFolder}
-                                  >
-                                    <HiOutlineInformationCircle className="h-5 w-5" />
-                                  </button>
-                                </Tooltip>
-                                {!file.isFolder &&
-                                  (file.name.endsWith('.pdf') ||
-                                    file.name.match(/\.(jpe?g|png|gif)$/i)) && (
-                                    <Tooltip content="Preview">
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          fetchFilePreview(file.name)
-                                        }
-                                        className="text-gray-500 hover:text-purple-600 transition-all duration-200 ease-in-out hover:scale-110"
-                                      >
-                                        <HiOutlineEye className="h-5 w-5" />
-                                      </button>
-                                    </Tooltip>
-                                  )}
-                              </div>
-                            </Table.Cell>
-                          </Table.Row>
-                        ))}
-                      </Table.Body>
-                    </Table>
-                  )}
-                  <div className="flex items-center justify-between mt-4">
-                    <Pagination
-                      currentPage={currentPage}
-                      totalPages={Math.ceil(
-                        sortedAndFilteredFiles.length / itemsPerPage,
-                      )}
-                      onPageChange={setCurrentPage}
-                      showIcons
-                    />
-                    <div className="dark:text-white">
-                      Showing {paginatedFiles.length} of{' '}
-                      {sortedAndFilteredFiles.length} files
-                    </div>
-                  </div>
-                  <div className="mt-4">
-                    <FileInput
-                      ref={fileInputRef}
-                      multiple
-                      onChange={handleFileUpload}
-                      disabled={isUploading}
-                      helperText="Choose files to upload"
-                    />
-                    {isUploading && (
-                      <div className="mt-2">
-                        {Object.entries(uploadProgress).map(
-                          ([fileName, progress]) => (
-                            <div key={fileName} className="mb-2">
-                              <div className="flex justify-between mb-1">
-                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                                  {fileName}
-                                </span>
-                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                                  {progress}%
-                                </span>
-                              </div>
-                              <Progress
-                                progress={progress}
-                                size="sm"
-                                color="blue"
-                              />
-                            </div>
-                          ),
+                            <HiOutlineFolder className="mr-2 h-5 w-5 text-yellow-500" />
+                            {file.name}
+                          </button>
+                        ) : (
+                          file.name
                         )}
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
+                      </Table.Cell>
+                      <Table.Cell>
+                        {file.isFolder ? '-' : formatFileSize(file.size)}
+                      </Table.Cell>
+                      <Table.Cell>
+                        {file.isFolder
+                          ? '-'
+                          : new Date(file.updated).toLocaleString()}
+                      </Table.Cell>
+                      <Table.Cell>{renderFileActions(file)}</Table.Cell>
+                    </Table.Row>
+                  ))}
+                </Table.Body>
+              </Table>
+            )}
+            <div className="flex items-center justify-between mt-4">
+              <Pagination
+                currentPage={currentPage}
+                totalPages={Math.ceil(
+                  sortedAndFilteredFiles.length / itemsPerPage,
+                )}
+                onPageChange={setCurrentPage}
+                showIcons
+              />
+              <div className="dark:text-white">
+                Showing {paginatedFiles.length} of{' '}
+                {sortedAndFilteredFiles.length} files
+              </div>
             </div>
-          </Card>
+          </>
         )}
       </div>
       <Modal show={deleteModalOpen} onClose={() => setDeleteModalOpen(false)}>
@@ -1002,6 +693,42 @@ function StorageManager({ config }: StorageManagerProps) {
               {renderPreviewContent(previewData)}
             </div>
           )}
+        </Modal.Body>
+      </Modal>
+      <Modal
+        show={bulkUploadModalOpen}
+        onClose={() => setBulkUploadModalOpen(false)}
+        size="lg"
+      >
+        <Modal.Header>Bulk Upload</Modal.Header>
+        <Modal.Body>
+          <BulkUpload
+            bucketName={selectedBucket}
+            currentPath={currentPath}
+            onClose={() => setBulkUploadModalOpen(false)}
+            onUploadComplete={() => {
+              setBulkUploadModalOpen(false);
+              onFolderChange(); // Refresh the file list after upload
+            }}
+          />
+        </Modal.Body>
+      </Modal>
+      <Modal
+        show={fileUploadModalOpen}
+        onClose={() => setFileUploadModalOpen(false)}
+        size="lg"
+      >
+        <Modal.Header>Upload Files</Modal.Header>
+        <Modal.Body>
+          <FileUpload
+            bucketName={selectedBucket}
+            currentPath={currentPath}
+            onClose={() => setFileUploadModalOpen(false)}
+            onUploadComplete={() => {
+              setFileUploadModalOpen(false);
+              onFolderChange(); // Refresh the file list after upload
+            }}
+          />
         </Modal.Body>
       </Modal>
       {showToast && (

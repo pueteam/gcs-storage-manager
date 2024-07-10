@@ -39,7 +39,7 @@ function ConfigScreen({ setConfig, initialConfig = null }: ConfigProps) {
     await window.electron.ipcRenderer.invoke('save-config', formConfig);
     setConfig(formConfig);
     setTheme(formConfig.theme);
-    navigate('/storage');
+    navigate('/');
   };
 
   const handleSelectCredentialsFile = async () => {
@@ -52,7 +52,7 @@ function ConfigScreen({ setConfig, initialConfig = null }: ConfigProps) {
   };
 
   return (
-    <Card className="max-w-md mx-auto">
+    <Card className="max-w-md mx-auto" data-testid="config-screen">
       <h1 className="text-2xl font-bold mb-4 dark:text-white">
         {initialConfig ? 'Update Configuration' : 'Configuration'}
       </h1>
@@ -112,7 +112,7 @@ function ConfigScreen({ setConfig, initialConfig = null }: ConfigProps) {
           {initialConfig ? 'Update Configuration' : 'Save and Continue'}
         </Button>
         {initialConfig && (
-          <Button color="light" onClick={() => navigate('/storage')}>
+          <Button color="light" onClick={() => navigate('/')}>
             Cancel
           </Button>
         )}

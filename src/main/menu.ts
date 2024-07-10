@@ -54,17 +54,17 @@ export default class MenuBuilder {
 
   buildDarwinTemplate(): MenuItemConstructorOptions[] {
     const subMenuAbout: DarwinMenuItemConstructorOptions = {
-      label: 'Electron',
+      label: 'GCS SM',
       submenu: [
         {
-          label: 'About ElectronReact',
+          label: 'About GCS SM',
           selector: 'orderFrontStandardAboutPanel:',
         },
         { type: 'separator' },
         { label: 'Services', submenu: [] },
         { type: 'separator' },
         {
-          label: 'Hide ElectronReact',
+          label: 'Hide GCS SM',
           accelerator: 'Command+H',
           selector: 'hide:',
         },
@@ -195,7 +195,26 @@ export default class MenuBuilder {
         ? subMenuViewDev
         : subMenuViewProd;
 
-    return [subMenuAbout, subMenuEdit, subMenuView, subMenuWindow, subMenuHelp];
+    const subMenuSettings: MenuItemConstructorOptions = {
+      label: 'Settings',
+      submenu: [
+        {
+          label: 'Configuration',
+          click: () => {
+            this.mainWindow.webContents.send('navigate-to-config');
+          },
+        },
+      ],
+    };
+
+    return [
+      subMenuAbout,
+      subMenuEdit,
+      subMenuView,
+      subMenuWindow,
+      subMenuSettings,
+      subMenuHelp,
+    ];
   }
 
   buildDefaultTemplate() {
@@ -257,6 +276,17 @@ export default class MenuBuilder {
                   },
                 },
               ],
+      },
+      {
+        label: 'Settings',
+        submenu: [
+          {
+            label: 'Configuration',
+            click: () => {
+              this.mainWindow.webContents.send('navigate-to-config');
+            },
+          },
+        ],
       },
       {
         label: 'Help',

@@ -439,6 +439,73 @@ ipcMain.handle('get-folder-structure', async (event, { bucketName }) => {
   }
 });
 
+ipcMain.handle('select-directory', async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openDirectory'],
+  });
+
+  if (result.canceled) {
+    return null;
+  }
+  return result.filePaths[0];
+});
+
+ipcMain.handle(
+  'bulk-upload',
+  async (event, { bucketName, localDirectory, destination }) => {
+    if (!storage) throw new Error('Storage not initialized');
+
+    const bucket = storage.bucket(bucketName);
+
+    const uploadFile = async (filePath: string) => {
+      const relativeFilePath = path.relative(localDirectory, filePath);
+      const destinationPath = path
+        .join(destination, relativeFilePath)
+        .replace(/\\/g, '/');
+
+      await bucket.upload(filePath, {
+        destination: destinationPath,
+        resumable: false,
+      });
+    };
+
+    const walkDir = async (dir: string): Promise<string[]> => {
+      const files = await fs.promises.readdir(dir);
+      const filePaths = await Promise.all(
+        files.map(async (file) => {
+          const filePath = path.join(dir, file);
+          const stats = await fs.promises.stat(filePath);
+          if (stats.isDirectory()) {
+            return walkDir(filePath);
+          }
+
+          return filePath;
+        }),
+      );
+      return filePaths.flat();
+    };
+
+    try {
+      const files = await walkDir(localDirectory);
+      let uploadedFiles = 0;
+
+      // eslint-disable-next-line no-restricted-syntax
+      for (const file of files) {
+        // eslint-disable-next-line no-await-in-loop
+        await uploadFile(file);
+        uploadedFiles += 1;
+        const progress = Math.round((uploadedFiles / files.length) * 100);
+        event.sender.send('bulk-upload-progress', progress);
+      }
+
+      event.sender.send('bulk-upload-complete');
+    } catch (error) {
+      console.error('Bulk upload failed:', error);
+      throw error;
+    }
+  },
+);
+
 ipcMain.on('ipc-example', async (event, arg) => {
   const msgTemplate = (pingPong: string) => `IPC test: ${pingPong}`;
   console.log(msgTemplate(arg));
