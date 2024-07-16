@@ -9,10 +9,10 @@ Google Cloud Storage Manager is an Electron-based desktop application that provi
 - **Bucket Management**: View and select from your GCS buckets.
 - **File Browser**: Navigate through your folder structure with an intuitive interface.
 - **File Operations**:
-  - Upload files and folders
+  - Upload individual files
   - Bulk upload of entire directories
-  - Download files
-  - Delete files and folders
+  - Download files (individual and bulk)
+  - Delete files and folders (individual and bulk)
   - Create new folders
   - Rename folders
   - File preview for images and PDFs
@@ -50,15 +50,16 @@ After installation, you'll need to configure the application with your Google Cl
 3. Once configured, you can:
    - Select a bucket from the list of available buckets.
    - Navigate through your folder structure using the folder tree or file browser.
-   - Upload individual files by clicking the upload button or dragging and dropping files.
-   - Perform bulk uploads of entire directories.
-   - Download files by clicking the download icon next to a file.
+   - Upload individual files by clicking the "Upload Files" button.
+   - Perform bulk uploads of entire directories using the "Bulk Upload" feature.
+   - Download files individually or in bulk.
    - Create new folders using the "New Folder" button.
    - Rename or delete folders and files using the context menu (right-click).
    - Search for files and folders using the search bar.
    - Preview PDFs and images by clicking the eye icon.
    - Monitor upload and download progress with real-time progress bars.
    - Use the expand/collapse buttons to manage the folder tree view.
+   - Perform bulk actions like delete and download using the "More Options" dropdown menu.
 
 ## Contributing
 

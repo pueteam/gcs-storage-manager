@@ -11,22 +11,21 @@ import {
   Breadcrumb,
   Progress,
   Tooltip,
+  Checkbox,
 } from 'flowbite-react';
 import {
   HiOutlineDownload,
   HiOutlineTrash,
   HiCheck,
   HiOutlineFolder,
-  HiOutlineChevronLeft,
   HiOutlineInformationCircle,
   HiOutlineEye,
-  HiOutlineUpload,
-  HiOutlineDocument,
 } from 'react-icons/hi';
 import { IpcRendererEvent } from 'electron';
 import { useTheme } from '../ThemeContext';
 import BulkUpload from './BulkUpload';
 import FileUpload from './FileUpload';
+import ActionButtons from './ActionButtons';
 
 interface FileInfo {
   name: string;
@@ -84,27 +83,48 @@ function StorageManager({
   const [isLoading, setIsLoading] = useState(false);
   const [bulkUploadModalOpen, setBulkUploadModalOpen] = useState(false);
   const [fileUploadModalOpen, setFileUploadModalOpen] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    const handleDownloadProgress = (
+  const handleSelectFile = (fileName: string) => {
+    setSelectedFiles((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(fileName)) {
+        newSet.delete(fileName);
+      } else {
+        newSet.add(fileName);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedFiles.size === files.length) {
+      setSelectedFiles(new Set());
+    } else {
+      setSelectedFiles(new Set(files.map((file) => file.name)));
+    }
+  };
+
+  const handleDownloadProgress = useCallback(
+    (
       _event: IpcRendererEvent,
       { filePath, progress }: DownloadProgressData,
     ) => {
       setDownloadProgress((prev) => ({ ...prev, [filePath]: progress }));
-    };
-
-    window.electron.ipcRenderer.on<DownloadProgressData>(
-      'download-progress',
-      handleDownloadProgress,
-    );
-
-    return () => {
-      window.electron.ipcRenderer.removeListener(
+    },
+    [],
+  );
+  useEffect(() => {
+    const removeDownloadListener =
+      window.electron.ipcRenderer.on<DownloadProgressData>(
         'download-progress',
         handleDownloadProgress,
       );
+
+    return () => {
+      removeDownloadListener();
     };
-  }, []);
+  }, [handleDownloadProgress]);
 
   const fetchFiles = useCallback(async (bucketName: string, path: string) => {
     setIsLoading(true);
@@ -140,6 +160,34 @@ function StorageManager({
       ? `${currentPath}/${folderName}`
       : `${folderName}`;
     onFolderSelect(newPath);
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedFiles.size === 0) return;
+
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete ${selectedFiles.size} file(s)?`,
+    );
+    if (!confirmDelete) return;
+
+    try {
+      const deletePromises = Array.from(selectedFiles).map((fileName) => {
+        const filePath = currentPath ? `${currentPath}/${fileName}` : fileName;
+        return window.electron.ipcRenderer.invoke('delete-file', {
+          bucketName: selectedBucket,
+          filePath,
+        });
+      });
+
+      await Promise.all(deletePromises);
+
+      setSelectedFiles(new Set());
+      fetchFiles(selectedBucket, currentPath);
+      alert('Selected files deleted successfully');
+    } catch (error) {
+      console.error('Error deleting files:', error);
+      alert('An error occurred while deleting files');
+    }
   };
 
   const handleBackClick = () => {
@@ -183,6 +231,24 @@ function StorageManager({
       }, 3000);
     } catch (error) {
       console.error('Error downloading file:', error);
+    }
+  };
+
+  const handleBulkDownload = async () => {
+    if (selectedFiles.size === 0) return;
+
+    try {
+      const downloadPromises = Array.from(selectedFiles).map((fileName) => {
+        return handleFileDownload(fileName);
+      });
+
+      await Promise.all(downloadPromises);
+
+      setSelectedFiles(new Set());
+      alert('Selected files downloaded successfully');
+    } catch (error) {
+      console.error('Error downloading files:', error);
+      alert('An error occurred while downloading files');
     }
   };
 
@@ -464,31 +530,16 @@ function StorageManager({
               </Breadcrumb>
             </div>
             <div className="flex justify-between mb-4">
-              {currentPath && (
-                <Button color="light" onClick={handleBackClick}>
-                  <HiOutlineChevronLeft className="mr-2 h-5 w-5" />
-                  Back
-                </Button>
-              )}
-              <Button color="light" onClick={createFolder}>
-                <HiOutlineFolder className="mr-2 h-5 w-5 text-yellow-500" />
-                New Folder
-              </Button>
-              <Button
-                color="light"
-                onClick={() => setFileUploadModalOpen(true)}
-                className="mr-2"
-              >
-                <HiOutlineDocument className="mr-2 h-5 w-5 text-green-500" />
-                Upload Files
-              </Button>
-              <Button
-                color="light"
-                onClick={() => setBulkUploadModalOpen(true)}
-              >
-                <HiOutlineUpload className="mr-2 h-5 w-5 text-blue-500" />
-                Bulk Upload
-              </Button>
+              <ActionButtons
+                currentPath={currentPath}
+                handleBackClick={handleBackClick}
+                createFolder={createFolder}
+                setFileUploadModalOpen={setFileUploadModalOpen}
+                setBulkUploadModalOpen={setBulkUploadModalOpen}
+                handleBulkDelete={handleBulkDelete}
+                handleBulkDownload={handleBulkDownload}
+                selectedFilesCount={selectedFiles.size}
+              />
             </div>
             <div className="mb-4 flex justify-between items-center">
               <TextInput
@@ -518,6 +569,15 @@ function StorageManager({
             ) : (
               <Table>
                 <Table.Head>
+                  <Table.HeadCell>
+                    <Checkbox
+                      checked={
+                        selectedFiles.size === files.length &&
+                        files.length !== 0
+                      }
+                      onChange={handleSelectAll}
+                    />
+                  </Table.HeadCell>
                   <Table.HeadCell
                     onClick={() => handleSort('name')}
                     className="cursor-pointer"
@@ -550,6 +610,12 @@ function StorageManager({
                       key={file.name}
                       className="bg-white dark:border-gray-700 dark:bg-gray-800"
                     >
+                      <Table.Cell>
+                        <Checkbox
+                          checked={selectedFiles.has(file.name)}
+                          onChange={() => handleSelectFile(file.name)}
+                        />
+                      </Table.Cell>
                       <Table.Cell className="whitespace-nowrap font-medium text-gray-900 dark:text-white">
                         {file.isFolder ? (
                           <button

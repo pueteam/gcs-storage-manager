@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Button, TextInput, Progress } from 'flowbite-react';
 import { HiOutlineFolder } from 'react-icons/hi';
 import { IpcRendererEvent } from 'electron';
@@ -20,26 +20,23 @@ function BulkUpload({
   const [isUploading, setIsUploading] = useState(false);
   const [progress, setProgress] = useState(0);
 
-  useEffect(() => {
-    const progressListener = (
-      _event: IpcRendererEvent,
-      progressData: number,
-    ) => {
+  const progressListener = useCallback(
+    (_event: IpcRendererEvent, progressData: number) => {
       setProgress(progressData);
-    };
+    },
+    [],
+  );
 
-    window.electron.ipcRenderer.on<number>(
+  useEffect(() => {
+    const removeListener = window.electron.ipcRenderer.on(
       'bulk-upload-progress',
       progressListener,
     );
 
     return () => {
-      window.electron.ipcRenderer.removeListener(
-        'bulk-upload-progress',
-        progressListener,
-      );
+      removeListener();
     };
-  }, []);
+  }, [progressListener]);
 
   const handleDirectorySelect = async () => {
     const result = await window.electron.ipcRenderer.invoke('select-directory');

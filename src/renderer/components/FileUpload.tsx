@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Button, Progress } from 'flowbite-react';
 import { HiOutlineUpload } from 'react-icons/hi';
 import { IpcRendererEvent } from 'electron';
@@ -28,26 +28,23 @@ function FileUpload({
   }>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    const handleProgress = (
-      _event: IpcRendererEvent,
-      { fileName, progress }: UploadProgressData,
-    ) => {
+  const handleProgress = useCallback(
+    (_event: IpcRendererEvent, { fileName, progress }: UploadProgressData) => {
       setUploadProgress((prev) => ({ ...prev, [fileName]: progress }));
-    };
+    },
+    [],
+  );
 
-    window.electron.ipcRenderer.on<UploadProgressData>(
+  useEffect(() => {
+    const removeListener = window.electron.ipcRenderer.on<UploadProgressData>(
       'upload-progress',
       handleProgress,
     );
 
     return () => {
-      window.electron.ipcRenderer.removeListener(
-        'upload-progress',
-        handleProgress,
-      );
+      removeListener();
     };
-  }, []);
+  }, [handleProgress]);
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files) {
